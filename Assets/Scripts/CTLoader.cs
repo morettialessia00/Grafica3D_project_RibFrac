@@ -8,20 +8,100 @@ using UnityVolumeRendering;
 public class CTLoader : MonoBehaviour
 {
     [Header("Paths")]
-    public string niftiPath      = ""; // es. C:/..../RibFrac108-image.nii.gz
+    public string niftiPath       = ""; // es. C:/..../RibFrac108-image.nii.gz
     public string predictionsPath = ""; // es. C:/..../RibFrac108_predictions.json
-    public string objFolder      = ""; // es. C:/..../Models/Fractures/RibFrac108/
+    public string objFolder       = ""; // es. C:/..../Models/Fractures/RibFrac108/
+
+    [Header("Visualizzazione")]
+    [Tooltip("Fattore di scala uniforme del volume CT. Aumenta se la CT appare troppo piccola.")]
+    public float ctScale = 1f;
+
+    [Header("UI")]
+    public CaseInfoPanel caseInfoPanel; // Trascina qui il GameObject con CaseInfoPanel
+    [Tooltip("Il pulsante Load DATA — viene disabilitato dopo il primo caricamento")]
+    public UnityEngine.UI.Button loadButton;
 
     private VolumeDataset        _dataset;
     private VolumeRenderedObject _volObj;
+    private GameObject           _fracturesParent;
 
-    void Start()
+    // ── Dati predizioni esposti (rib_id → FractureEntry) ─────────────────────
+    public Dictionary<int, FractureEntry> FractureData { get; private set; }
+        = new Dictionary<int, FractureEntry>();
+    public string  CurrentPatientId  { get; private set; } = "";
+    public bool    HasPredictions    { get; private set; } = false;
+
+    // ── API pubblica per il pulsante UI ───────────────────────────────────────
+    public bool FracturesVisible => _fracturesParent != null && _fracturesParent.activeSelf;
+
+    public void ToggleFractures()
+    {
+        if (_fracturesParent == null) return;
+        _fracturesParent.SetActive(!_fracturesParent.activeSelf);
+    }
+
+    public void SetFracturesVisible(bool visible)
+    {
+        if (_fracturesParent == null) return;
+        _fracturesParent.SetActive(visible);
+    }
+
+    // ── Punto 4: logica di colorazione a 3 stati ──────────────────────────────
+    // 0 = Nessuna lesione  → mesh fratture nascoste
+    // 1 = Lesione binaria  → tutte le mesh rosse
+    // 2 = Lesione per tipo → colori per classe (Displaced / Non-displaced / Buckle)
+    public int CurrentColorMode { get; private set; } = 0;
+
+    public void ApplyColorMode(int mode)
+    {
+        CurrentColorMode = mode;
+
+        if (_fracturesParent == null) return;
+
+        if (mode == 0)
+        {
+            _fracturesParent.SetActive(false);
+            return;
+        }
+
+        _fracturesParent.SetActive(true);
+
+        foreach (Transform child in _fracturesParent.transform)
+        {
+            Color col = GetColorForChild(child.name, mode);
+            foreach (var rend in child.GetComponentsInChildren<Renderer>())
+                rend.material.color = col;
+        }
+    }
+
+    // Nome GameObject: "rib_XX_Classe" (es. "rib_01_Displaced", "rib_02_Non-displaced")
+    static Color GetColorForChild(string goName, int mode)
+    {
+        if (mode == 1) return Color.red; // Lesione binaria: rosso uniforme
+
+        // mode 2: colore per classe
+        string[] parts = goName.Split('_');
+        string cls = parts.Length >= 3 ? parts[2] : "";
+        return cls switch
+        {
+            "Displaced"     => new Color(0.91f, 0.47f, 0.13f), // arancio #E87722
+            "Non-displaced" => new Color(0.29f, 0.56f, 0.85f), // blu     #4A90D9
+            "Buckle"        => new Color(0.61f, 0.35f, 0.71f), // viola   #9B59B6
+            _               => Color.gray
+        };
+    }
+
+    // ── Punto 3.3: caricamento esplicito, chiamato dal pulsante "Load DATA" ──
+    public void LoadData()
     {
         StartCoroutine(LoadAll());
     }
 
     IEnumerator LoadAll()
     {
+        // Disabilita il pulsante subito: evita caricamenti multipli
+        if (loadButton != null) loadButton.interactable = false;
+
         yield return StartCoroutine(LoadVolume(niftiPath));
         yield return StartCoroutine(LoadFractures(predictionsPath, objFolder));
 
@@ -53,47 +133,63 @@ public class CTLoader : MonoBehaviour
 
         _volObj = VolumeObjectFactory.CreateObject(_dataset);
         _volObj.transform.position = Vector3.zero;
+        // UnityVolumeRendering mappa k → -Y (testa in basso).
+        // Il flip (1,-1,1) inverte l'asse verticale senza alterare X/Z.
+        // La stessa correzione è applicata alla matrice T_vox delle mesh (vedi sotto).
+        _volObj.transform.localScale = new Vector3(ctScale, -ctScale, ctScale);
 
-        // ── Calcola soglia osso dal range HU reale del dataset ────────────────
-        // GetMinDataValue/GetMaxDataValue restituiscono i valori grezzi del voxel
-        // (unità HU, tipicamente: aria ≈ -1024, tessuto molle ≈ -100..80, osso ≈ 300..1800)
+        // ── Transfer Function: bone window clinico ────────────────────────────
+        // Rileva se i valori sono in HU (CT standard) o in altra scala normalizzata.
+        // In HU: aria ≈ -1024, grasso ≈ -100, muscolo ≈ +50, osso spongioso ≈ +300, corticale ≈ +700..1800
         float minVal = _dataset.GetMinDataValue();
         float maxVal = _dataset.GetMaxDataValue();
-        Debug.Log($"[CTLoader] HU range: [{minVal:F0}, {maxVal:F0}]");
+        float range  = maxVal - minVal;
+        bool  isHU   = minVal < -200f && maxVal > 400f;
 
-        // Soglie HU per l'osso (valori clinici standard)
-        const float HU_BONE_LOW  = 200f;   // inizio osso trabecolare
-        const float HU_BONE_HIGH = 700f;   // osso corticale denso
+        Debug.Log($"[CTLoader] Data range: [{minVal:F1}, {maxVal:F1}], isHU={isHU}");
 
-        // Normalizza in [0,1] rispetto al range del dataset
-        float normLow  = Mathf.Clamp01((HU_BONE_LOW  - minVal) / (maxVal - minVal));
-        float normHigh = Mathf.Clamp01((HU_BONE_HIGH - minVal) / (maxVal - minVal));
-        // Margine minimo tra i due punti per evitare la ramp collassata
-        if (normHigh - normLow < 0.01f) normHigh = Mathf.Min(normLow + 0.03f, 1f);
+        // N(hu, fallback): converte un valore HU in posizione [0,1] nella TF.
+        // Se i dati non sono in HU, usa il fallback (stima percentile del range).
+        System.Func<float, float, float> N = (hu, fb) =>
+            isHU ? Mathf.Clamp01((hu - minVal) / range) : fb;
 
-        Debug.Log($"[CTLoader] Soglia osso normalizzata: [{normLow:F3}, {normHigh:F3}]");
+        float nAir    = N(-900f, 0.03f); // aria / sfondo
+        float nLung   = N(-500f, 0.22f); // polmone
+        float nFat    = N(-100f, 0.42f); // grasso / tessuto molle
+        float nMuscle = N( 100f, 0.52f); // muscolo
+        float nBone   = N( 300f, 0.61f); // osso spongioso (inizio osso)
+        float nCortex = N( 700f, 0.74f); // osso corticale denso
+
+        Debug.Log($"[CTLoader] TF positions — lung:{nLung:F3} fat:{nFat:F3} bone:{nBone:F3} cortex:{nCortex:F3}");
 
         UnityVolumeRendering.TransferFunction tf =
             ScriptableObject.CreateInstance<UnityVolumeRendering.TransferFunction>();
 
-        // Colori: buio → beige osseo → bianco a densità massima
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(0.00f,    new Color(0.05f, 0.05f, 0.05f)));
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(normLow,  new Color(0.88f, 0.82f, 0.74f)));
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(1.00f,    new Color(1.00f, 1.00f, 1.00f)));
+        // ── Colori: scala di grigio CT clinica ────────────────────────────────
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(0f,       new Color(0.00f, 0.00f, 0.00f))); // nero (aria)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nLung,    new Color(0.10f, 0.10f, 0.10f))); // grigio scuro (polmone)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nFat,     new Color(0.28f, 0.26f, 0.24f))); // grigio medio-scuro (grasso)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nMuscle,  new Color(0.48f, 0.44f, 0.40f))); // grigio medio (muscolo)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nBone,    new Color(0.82f, 0.78f, 0.70f))); // beige chiaro (osso spongioso)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nCortex,  new Color(0.96f, 0.96f, 0.94f))); // quasi bianco (osso corticale)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(1f,       new Color(1.00f, 1.00f, 1.00f))); // bianco (massima densità)
 
-        // Alpha: trasparente sotto l'osso, salita ripida, opacità piena sull'osso corticale
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(0.00f,           0.00f));
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(normLow - 0.005f, 0.00f)); // under-threshold: zero
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(normLow,          0.00f)); // soglia inferiore
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(normHigh,         1.00f)); // salita ripida
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(1.00f,            1.00f));
+        // ── Alpha: quasi trasparente per aria/molle, sempre più opaco verso l'osso ──
+        // L'obiettivo è vedere il contorno del torace (faint) e le coste chiaramente.
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(0f,       0.000f)); // fuori corpo: zero
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nAir,     0.000f)); // aria: zero
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nLung,    0.006f)); // polmone: quasi trasparente
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nFat,     0.010f)); // tessuto molle: faint
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nMuscle,  0.018f)); // muscolo: lievemente visibile
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nBone,    0.12f));  // osso spongioso: salto di opacità
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nCortex,  0.85f));  // osso corticale: quasi pieno
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(1f,       1.00f));  // densità massima: opaco
 
         tf.GenerateTexture();
         _volObj.SetTransferFunction(tf);
 
-        // ── Aumenta il numero di campioni per ridurre i buchi nell'osso corticale
-        // Default = 1.0; 4.0 quadruplica i passi del ray caster → meno gaps su strutture sottili
-        _volObj.SetSamplingRateMultiplier(4.0f);
+        // Campionamento: 3× è un buon compromesso qualità/performance per le coste
+        _volObj.SetSamplingRateMultiplier(3.0f);
 
         Debug.Log("[CTLoader] CT caricata.");
         yield return null;
@@ -108,9 +204,14 @@ public class CTLoader : MonoBehaviour
             yield break;
         }
 
+        // ── Punto 3.4: JSON mancante → paziente non nel test set ─────────────
         if (!File.Exists(jsonPath))
         {
-            Debug.LogError($"[CTLoader] JSON predizioni non trovato: {jsonPath}");
+            HasPredictions    = false;
+            CurrentPatientId  = ExtractPatientId(jsonPath);
+            Debug.LogWarning($"[CTLoader] JSON predizioni non trovato: {jsonPath}. " +
+                             "Paziente non nel test set.");
+            caseInfoPanel?.ShowNotInTestSet(CurrentPatientId);
             yield break;
         }
 
@@ -122,6 +223,17 @@ public class CTLoader : MonoBehaviour
             Debug.LogError("[CTLoader] JSON malformato.");
             yield break;
         }
+
+        // ── Punto 3.1: costruisce il dizionario rib_id → FractureEntry ────────
+        FractureData.Clear();
+        foreach (var f in data.fractures)
+            FractureData[f.rib_id] = f;
+
+        CurrentPatientId = data.public_id;
+        HasPredictions   = true;
+
+        // ── Punto 3.2: aggiorna il pannello Case INFO ─────────────────────────
+        caseInfoPanel?.Refresh(data);
 
         // ── Matrice voxel → Unity world ───────────────────────────────────────
         // UnityVolumeRendering posiziona il volume come:
@@ -140,14 +252,16 @@ public class CTLoader : MonoBehaviour
 
         // Matrix4x4 colonna-maggiore in Unity:
         // col0 = asse i → Unity, col1 = asse j → Unity, col2 = asse k → Unity, col3 = traslazione
+        // k → +Y (non negato): allineato al flip (1,-1,1) applicato al volume CT sopra.
         Matrix4x4 T_vox = new Matrix4x4(
             new Vector4(pixX,  0f,    0f,    0f),  // i  → Unity X
             new Vector4(0f,    0f,    pixY,  0f),  // j  → Unity Z
-            new Vector4(0f,   -pixZ,  0f,    0f),  // k  → Unity Y (invertito)
-            new Vector4(-cx,   cz,   -cy,    1f)   // traslazione
+            new Vector4(0f,    pixZ,  0f,    0f),  // k  → Unity Y
+            new Vector4(-cx,  -cz,   -cy,    1f)   // traslazione
         );
 
-        GameObject fracturesParent = new GameObject($"{data.public_id}_fractures");
+        _fracturesParent = new GameObject($"{data.public_id}_fractures");
+        _fracturesParent.SetActive(false); // nascoste finché l'utente non preme il pulsante
 
         foreach (var frac in data.fractures)
         {
@@ -182,7 +296,7 @@ public class CTLoader : MonoBehaviour
             if (go == null) continue;
 
             go.name = $"rib_{frac.rib_id:D2}_{frac.predicted_class}";
-            go.transform.SetParent(fracturesParent.transform);
+            go.transform.SetParent(_fracturesParent.transform);
 
             // Palette color-blind safe (piano sezione 4.3)
             Color col = frac.predicted_class switch
@@ -201,6 +315,16 @@ public class CTLoader : MonoBehaviour
         }
 
         Debug.Log($"[CTLoader] Fratture caricate: {data.fractures.Length}");
+    }
+
+    // ─── Helper: estrae public_id dal percorso del file JSON ─────────────────
+    // Es. "C:/.../RibFrac108_predictions.json" → "RibFrac108"
+    // Es. "C:/.../RibFrac108_predictions.json" → "RibFrac108"
+    static string ExtractPatientId(string jsonPath)
+    {
+        const string suffix = "_predictions";
+        string name = Path.GetFileNameWithoutExtension(jsonPath);
+        return name.EndsWith(suffix) ? name.Substring(0, name.Length - suffix.Length) : name;
     }
 
     // ─── Parsing affine dal meta JSON ─────────────────────────────────────────
