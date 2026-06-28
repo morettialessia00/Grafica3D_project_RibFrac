@@ -92,6 +92,19 @@ public static class SimpleOBJLoader
         if (meshUVs.Count == meshVertices.Count)
             mesh.SetUVs(0, meshUVs);
 
+        // Se la trasformazione inverte l'handedness (det < 0), le facce risultano
+        // inside-out (winding clockwise in Unity). Invertire l'ordine v1/v2
+        // di ogni triangolo riporta il winding al senso corretto.
+        if (useCustomTransform && vertexTransform.determinant < 0)
+        {
+            for (int i = 0; i < meshTriangles.Count; i += 3)
+            {
+                int tmp = meshTriangles[i + 1];
+                meshTriangles[i + 1] = meshTriangles[i + 2];
+                meshTriangles[i + 2] = tmp;
+            }
+        }
+
         mesh.SetTriangles(meshTriangles, 0);
 
         if (meshNormals.Count != meshVertices.Count)
@@ -101,8 +114,7 @@ public static class SimpleOBJLoader
 
         GameObject go = new GameObject(mesh.name);
         go.AddComponent<MeshFilter>().mesh = mesh;
-        go.AddComponent<MeshRenderer>().material =
-            new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        go.AddComponent<MeshRenderer>().material = CreateFractureMaterial();
 
         return go;
     }
@@ -155,6 +167,20 @@ public static class SimpleOBJLoader
         int newIdx = meshVerts.Count - 1;
         cache[token] = newIdx;
         return newIdx;
+    }
+
+    // Materiale overlay per le fratture: shader custom con ZTest Always hardcoded,
+    // Cull Off e alpha blending. Sempre visibile sopra la CT volumetrica.
+    static Material CreateFractureMaterial()
+    {
+        Shader shader = Shader.Find("Custom/FractureOverlay");
+        if (shader == null)
+        {
+            Debug.LogError("[SimpleOBJLoader] Shader 'Custom/FractureOverlay' non trovato! " +
+                           "Assicurati che Assets/Shaders/FractureOverlay.shader esista nel progetto.");
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+        }
+        return new Material(shader);
     }
 
     static float ParseF(string s) => float.Parse(s, CultureInfo.InvariantCulture);

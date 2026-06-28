@@ -42,12 +42,14 @@ public class CaseInfoPanel : MonoBehaviour
     public void ShowNotInTestSet(string patientId)
     {
         SetText(patientIdText,     "Patient ID: " + ExtractNumber(patientId));
-        SetText(fractureCountText, "Paziente non nel test set");
-        SetText(classBreakdownText, "Predizioni non disponibili");
+        SetText(fractureCountText, "Patient not in test set");
+        SetText(classBreakdownText, "Predictions not available");
     }
 
     // ── Punto 3.2: popola il pannello dai dati predizioni ─────────────────────
-    public void Refresh(PredictionData data)
+    // totalFractures = tutte le fratture caricate (classificate + segmental + ambigue)
+    // nUnclassified  = segmental + ambigue
+    public void Refresh(PredictionData data, int totalFractures, int nUnclassified = 0)
     {
         if (data == null) { Clear(); return; }
 
@@ -70,12 +72,12 @@ public class CaseInfoPanel : MonoBehaviour
             }
         }
 
-        int total = data.fractures != null ? data.fractures.Length : 0;
-        SetText(fractureCountText, $"<b><i>Fratture totali:</i></b> {total}");
+        SetText(fractureCountText, $"<b><i>Total fractures:</i></b> {totalFractures}");
         SetText(classBreakdownText,
             $"<i>Displaced:</i> {nDisplaced}\n" +
             $"<i>Non-displaced:</i> {nNonDisplaced}\n" +
-            $"<i>Buckle:</i> {nBuckle}");
+            $"<i>Buckle:</i> {nBuckle}\n" +
+            $"<i>Unclassified:</i> {nUnclassified}");
     }
 
     // ── Helper null-safe ───────────────────────────────────────────────────────
