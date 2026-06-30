@@ -37,6 +37,9 @@ public class CameraControlPanel : MonoBehaviour
             return;
         }
 
+        // Disabilitati finché i dati non sono caricati
+        SetInteractable(false);
+
         SetupHoldButton(btnRotateUp,    cameraController.BeginRotateUp,    cameraController.EndRotateUp);
         SetupHoldButton(btnRotateDown,  cameraController.BeginRotateDown,  cameraController.EndRotateDown);
         SetupHoldButton(btnRotateLeft,  cameraController.BeginRotateLeft,  cameraController.EndRotateLeft);
@@ -46,6 +49,18 @@ public class CameraControlPanel : MonoBehaviour
 
         if (btnReset != null)
             btnReset.onClick.AddListener(cameraController.ResetView);
+    }
+
+    /// <summary>Chiamato da CTLoader dopo il caricamento completo.</summary>
+    public void SetInteractable(bool value)
+    {
+        if (btnRotateUp    != null) btnRotateUp.interactable    = value;
+        if (btnRotateDown  != null) btnRotateDown.interactable  = value;
+        if (btnRotateLeft  != null) btnRotateLeft.interactable  = value;
+        if (btnRotateRight != null) btnRotateRight.interactable = value;
+        if (btnZoomIn      != null) btnZoomIn.interactable      = value;
+        if (btnZoomOut     != null) btnZoomOut.interactable     = value;
+        if (btnReset       != null) btnReset.interactable       = value;
     }
 
     /// <summary>

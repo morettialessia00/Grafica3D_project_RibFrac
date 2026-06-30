@@ -60,14 +60,14 @@ public class FractureLegend : MonoBehaviour
     {
         _panel = MakeRect("FractureLegend_Panel", canvasRoot);
         RectTransform rt = _panel.GetComponent<RectTransform>();
-        rt.anchorMin        = new Vector2(1f, 1f);
-        rt.anchorMax        = new Vector2(1f, 1f);
-        rt.pivot            = new Vector2(1f, 1f);
-        rt.anchoredPosition = new Vector2(-14f, -14f);
+        rt.anchorMin        = new Vector2(1f, 0f);
+        rt.anchorMax        = new Vector2(1f, 0f);
+        rt.pivot            = new Vector2(1f, 0f);
+        rt.anchoredPosition = new Vector2(-14f, 14f);
         rt.sizeDelta        = Vector2.zero;
 
         Image bg = _panel.AddComponent<Image>();
-        bg.color = new Color(0.05f, 0.05f, 0.05f, 0.75f);
+        bg.color = new Color(0.157f, 0.290f, 0.376f, 0.92f); // pannello #284A60
 
         VerticalLayoutGroup vlg = _panel.AddComponent<VerticalLayoutGroup>();
         vlg.padding                = new RectOffset(20, 24, 14, 20);
@@ -84,7 +84,7 @@ public class FractureLegend : MonoBehaviour
 
         // Titolo
         _panel.transform.SetParent(canvasRoot, false); // assicura ordine corretto
-        AddText(_panel.transform, "Legend", 30f, FontStyles.Bold, Color.white,
+        AddText(_panel.transform, "Legend", 30f, FontStyles.Bold, new Color(0.722f, 0.847f, 0.910f, 1f), // testo #B8D8E8
                 preferredWidth: 300f, preferredHeight: 42f);
 
         AddSpacer(_panel.transform, 6f);
@@ -154,7 +154,7 @@ public class FractureLegend : MonoBehaviour
         TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
         tmp.text          = richText;
         tmp.fontSize      = fontSize;
-        tmp.color         = Color.white;
+        tmp.color         = new Color(0.722f, 0.847f, 0.910f, 1f); // testo #B8D8E8
         tmp.lineSpacing   = 8f;
         tmp.raycastTarget = false;
         tmp.richText      = true;

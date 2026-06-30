@@ -97,11 +97,11 @@ public class FractureDetailPanel : MonoBehaviour
         rt.anchorMin        = new Vector2(1f, 0.5f);
         rt.anchorMax        = new Vector2(1f, 0.5f);
         rt.pivot            = new Vector2(1f, 0.5f);
-        rt.anchoredPosition = new Vector2(-14f, 0f);
+        rt.anchoredPosition = new Vector2(-14f, -125f);
         rt.sizeDelta        = Vector2.zero;
 
         Image bg = _panel.AddComponent<Image>();
-        bg.color = new Color(0.05f, 0.05f, 0.05f, 0.75f);
+        bg.color = new Color(0.157f, 0.290f, 0.376f, 0.92f); // pannello #284A60
 
         VerticalLayoutGroup vlg = _panel.AddComponent<VerticalLayoutGroup>();
         vlg.padding                = new RectOffset(28, 32, 18, 24);
@@ -118,18 +118,18 @@ public class FractureDetailPanel : MonoBehaviour
 
         // Titolo: "Fracture N"
         _titleText = AddText(_panel.transform, "—",
-                             36f, FontStyles.Bold, Color.white, 420f, 50f);
+                             36f, FontStyles.Bold, new Color(0.722f, 0.847f, 0.910f, 1f), 420f, 50f); // testo #B8D8E8
 
         AddSpacer(_panel.transform, 8f);
 
         // Classe predetta (colorata)
         _classText = AddText(_panel.transform, "—",
-                             32f, FontStyles.Normal, Color.white, 420f, 44f);
+                             32f, FontStyles.Normal, new Color(0.722f, 0.847f, 0.910f, 1f), 420f, 44f); // testo #B8D8E8
 
         // Confidenza
         _confidenceText = AddText(_panel.transform, "—",
                                   26f, FontStyles.Normal,
-                                  new Color(0.85f, 0.85f, 0.85f), 420f, 36f);
+                                  new Color(0.416f, 0.667f, 0.733f, 1f), 420f, 36f); // testo secondario #6AAABB
 
         AddSpacer(_panel.transform, 8f);
 
@@ -141,7 +141,7 @@ public class FractureDetailPanel : MonoBehaviour
 
         _probsText = _probsContainer.AddComponent<TextMeshProUGUI>();
         _probsText.fontSize      = 24f;
-        _probsText.color         = new Color(0.75f, 0.75f, 0.75f);
+        _probsText.color         = new Color(0.416f, 0.667f, 0.733f, 1f); // testo secondario #6AAABB
         _probsText.lineSpacing   = 6f;
         _probsText.raycastTarget = false;
         _probsText.richText      = true;

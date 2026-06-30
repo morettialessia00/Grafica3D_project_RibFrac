@@ -15,17 +15,21 @@ public class FractureSelector : MonoBehaviour
 {
     private CTLoader            _ctLoader;
     private FractureDetailPanel _detailPanel;
+    private CameraController    _camCtrl;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     void Start()
     {
         _ctLoader    = FindAnyObjectByType<CTLoader>();
         _detailPanel = FindAnyObjectByType<FractureDetailPanel>();
+        _camCtrl     = FindAnyObjectByType<CameraController>();
 
         if (_ctLoader == null)
             Debug.LogError("[FractureSelector] CTLoader non trovato in scena.");
         if (_detailPanel == null)
             Debug.LogError("[FractureSelector] FractureDetailPanel non trovato in scena.");
+        if (_camCtrl == null)
+            Debug.LogWarning("[FractureSelector] CameraController non trovato — fly-to disabilitato.");
     }
 
     void Update()
@@ -33,15 +37,44 @@ public class FractureSelector : MonoBehaviour
         var mouse = Mouse.current;
         if (mouse == null) return;
 
-        // Reagisce solo al frame esatto del click — non ai frame di hold
+        bool overUI = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+        bool inMode2 = _ctLoader != null && _ctLoader.CurrentColorMode == 2;
+
+        // ── Hover highlight (ogni frame) ──────────────────────────────────────
+        // Aggiorna quale frattura è sotto il cursore per il boost colore in CTLoader.
+        if (!overUI && inMode2)
+        {
+            Vector2 screenPos = mouse.position.ReadValue();
+            Ray hoverRay = Camera.main.ScreenPointToRay(new Vector3(screenPos.x, screenPos.y, 0f));
+
+            if (Physics.Raycast(hoverRay, out RaycastHit hoverHit))
+            {
+                int hoveredId = ParseRibId(hoverHit.collider.gameObject.name);
+                _ctLoader.SetHoveredObject(hoveredId >= 0 ? hoverHit.collider.gameObject : null);
+            }
+            else
+            {
+                _ctLoader.SetHoveredObject(null);
+            }
+        }
+        else
+        {
+            _ctLoader?.SetHoveredObject(null);
+        }
+
+        // ── Click sinistro ────────────────────────────────────────────────────
         if (!mouse.leftButton.wasPressedThisFrame) return;
+        if (overUI) return;
 
-        // Non intercettare click su elementi UI (bottoni, toggle, ecc.)
-        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+        // Il pannello dettaglio è disponibile solo in modalità "per tipo" (mode 2)
+        if (!inMode2)
+        {
+            _detailPanel?.Hide();
             return;
+        }
 
-        Vector2 screenPos = mouse.position.ReadValue();
-        Ray ray = Camera.main.ScreenPointToRay(new Vector3(screenPos.x, screenPos.y, 0f));
+        Vector2 clickPos = mouse.position.ReadValue();
+        Ray ray = Camera.main.ScreenPointToRay(new Vector3(clickPos.x, clickPos.y, 0f));
 
         if (Physics.Raycast(ray, out RaycastHit hit))
         {
@@ -49,13 +82,21 @@ public class FractureSelector : MonoBehaviour
 
             if (ribId >= 0)
             {
-                // Mesh-frattura colpita: cerca i dati nel dizionario predizioni.
-                // Per fratture non classificate (segmental/ambigue) il TryGetValue
-                // restituisce false e entry rimane null → FractureDetailPanel
-                // mostra "Unclassified" senza dati di confidenza.
+                // Mostra pannello dettaglio
                 FractureEntry entry = null;
                 _ctLoader?.FractureData.TryGetValue(ribId, out entry);
                 _detailPanel?.Show(ribId, entry);
+
+                // Centra e zooma la camera sulla frattura colpita
+                Renderer rend = hit.collider.GetComponentInChildren<Renderer>()
+                             ?? hit.collider.GetComponent<Renderer>();
+                Vector3 center = rend != null ? rend.bounds.center : hit.point;
+
+                // Distanza target: 3.5× la diagonale del bounding box, clampata [60, 300]
+                float diagonal   = rend != null ? rend.bounds.size.magnitude : 100f;
+                float targetDist = Mathf.Clamp(diagonal * 3.5f, 60f, 300f);
+                _camCtrl?.FlyToTarget(center, targetDist);
+
                 return;
             }
         }

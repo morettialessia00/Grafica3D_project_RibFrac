@@ -7,11 +7,15 @@ using UnityVolumeRendering;
 
 public class CTLoader : MonoBehaviour
 {
-    [Header("Paths")]
-    public string niftiPath       = ""; // es. C:/..../RibFrac108-image.nii.gz
-    public string predictionsPath = ""; // es. C:/..../RibFrac108_predictions.json
-    public string ambiguousPath   = ""; // es. C:/..../RibFrac108_ambiguous.json
-    public string objFolder       = ""; // es. C:/..../Models/Fractures/RibFrac108/
+    [Header("Riferimento Selettore")]
+    [Tooltip("Trascina qui il GameObject con PatientSelectorPanel")]
+    public PatientSelectorPanel patientSelectorPanel;
+
+    // Percorsi impostati a runtime da PatientSelectorPanel tramite LoadPatient()
+    private string _niftiPath       = "";
+    private string _predictionsPath = "";
+    private string _ambiguousPath   = "";
+    private string _objFolder       = "";
 
     [Header("Visualizzazione")]
     [Tooltip("Fattore di scala uniforme del volume CT. Aumenta se la CT appare troppo piccola.")]
@@ -29,6 +33,19 @@ public class CTLoader : MonoBehaviour
     // Buffer riusabile per il sort depth-based (nessuna allocazione per frame)
     private readonly List<(float sqDist, Renderer rend)> _depthSortBuffer
         = new List<(float, Renderer)>();
+
+    // Colori base delle mesh fratture (RGB + alpha canonico senza modulazione depth)
+    private readonly Dictionary<Renderer, Color> _baseColors
+        = new Dictionary<Renderer, Color>();
+
+    // GameObject frattura attualmente sotto il cursore (impostato da FractureSelector)
+    private GameObject _hoveredObject;
+
+    /// <summary>
+    /// Chiamato da FractureSelector ogni frame per aggiornare quale frattura
+    /// è sotto il cursore. Passa null per rimuovere l'highlight.
+    /// </summary>
+    public void SetHoveredObject(GameObject go) { _hoveredObject = go; }
 
     // ── Dati predizioni esposti (rib_id → FractureEntry) ─────────────────────
     public Dictionary<int, FractureEntry> FractureData { get; private set; }
@@ -75,8 +92,15 @@ public class CTLoader : MonoBehaviour
         {
             Color col = GetColorForChild(child.name, mode);
             foreach (var rend in child.GetComponentsInChildren<Renderer>())
-                rend.material.color = col;
+                SetFractureColor(rend, col);
         }
+    }
+
+    // Helper: imposta colore e registra il colore base per la modulazione depth
+    void SetFractureColor(Renderer rend, Color color)
+    {
+        rend.material.color = color;
+        _baseColors[rend] = color;
     }
 
     // Nome GameObject: "rib_XX_Classe" (es. "rib_01_Displaced", "rib_02_Non-displaced")
@@ -120,13 +144,81 @@ public class CTLoader : MonoBehaviour
         // Discendente: il più lontano va a indice 0 → rendererPriority 0 → renderizza prima
         _depthSortBuffer.Sort((a, b) => b.sqDist.CompareTo(a.sqDist));
 
-        for (int i = 0; i < _depthSortBuffer.Count; i++)
+        int n = _depthSortBuffer.Count;
+        for (int i = 0; i < n; i++)
+        {
             _depthSortBuffer[i].rend.rendererPriority = i;
+
+            // Depth cue: le fratture più lontane diventano più trasparenti.
+            // t=0 → farthest (alpha×0.45), t=1 → closest (alpha×1.0)
+            float t = n > 1 ? (float)i / (n - 1) : 1f;
+            float alphaScale = Mathf.Lerp(0.45f, 1.0f, t);
+
+            Renderer rend = _depthSortBuffer[i].rend;
+            if (_baseColors.TryGetValue(rend, out Color baseCol))
+            {
+                Color c = baseCol;
+                c.a = baseCol.a * alphaScale;
+
+                // Hover boost: schiarisce e aumenta l'opacità della frattura sotto il cursore.
+                // IsChildOf restituisce true anche se rend.transform == _hoveredObject.transform.
+                if (_hoveredObject != null && rend.transform.IsChildOf(_hoveredObject.transform))
+                {
+                    c   = Color.Lerp(c, Color.white, 0.30f);   // schiarisce verso bianco
+                    c.a = Mathf.Min(0.88f, baseCol.a * 2.5f);  // più opaco, ma mai pieno
+                }
+
+                rend.material.color = c;
+            }
+        }
     }
 
-    // ── Punto 3.3: caricamento esplicito, chiamato dal pulsante "Load DATA" ──
-    public void LoadData()
+    // ── Reset: distrugge i dati del paziente precedente ───────────────────────
+    // Va chiamato prima di LoadPatient() se un paziente è già stato caricato.
+    public void ResetPatient()
     {
+        // Distruggi volume CT
+        if (_volObj != null)
+        {
+            Destroy(_volObj.gameObject);
+            _volObj  = null;
+            _dataset = null;
+        }
+
+        // Distruggi mesh fratture
+        if (_fracturesParent != null)
+        {
+            Destroy(_fracturesParent);
+            _fracturesParent = null;
+        }
+
+        // Reset dizionari e buffer
+        FractureData.Clear();
+        _baseColors.Clear();
+        _depthSortBuffer.Clear();
+        _hoveredObject = null;
+
+        // Reset stati
+        HasPredictions   = false;
+        CurrentPatientId = "";
+        CurrentColorMode = 0;
+
+        // Reset UI
+        caseInfoPanel?.Clear();
+        FindAnyObjectByType<FractureToggle>()?.SetInteractable(false);
+        FindAnyObjectByType<CameraControlPanel>()?.SetInteractable(false);
+    }
+
+    // ── Punto di ingresso pubblico chiamato da PatientSelectorPanel ───────────
+    public void LoadPatient(PatientConfig config)
+    {
+        ResetPatient();
+
+        _niftiPath       = config.niftiPath;
+        _predictionsPath = config.predictionsPath;
+        _ambiguousPath   = config.ambiguousPath;
+        _objFolder       = config.meshFolder;
+
         StartCoroutine(LoadAll());
     }
 
@@ -135,15 +227,27 @@ public class CTLoader : MonoBehaviour
         // Disabilita il pulsante subito: evita caricamenti multipli
         if (loadButton != null) loadButton.interactable = false;
 
-        yield return StartCoroutine(LoadVolume(niftiPath));
-        yield return StartCoroutine(LoadFractures(predictionsPath, objFolder));
+        yield return StartCoroutine(LoadVolume(_niftiPath));
 
-        // Framing automatico della camera dopo il caricamento completo
+        // Posiziona la camera PRIMA di mostrare il volume → nessun glitch visivo
         CameraController cam = FindAnyObjectByType<CameraController>();
         if (cam != null)
             cam.AutoFrame();
         else
             Debug.LogWarning("[CTLoader] CameraController non trovato in scena.");
+
+        // Mostra il volume solo dopo che la camera è già nella posizione corretta
+        if (_volObj != null)
+            _volObj.gameObject.SetActive(true);
+
+        yield return StartCoroutine(LoadFractures(_predictionsPath, _objFolder));
+
+        // Abilita dropdown e controlli camera ora che i dati sono pronti
+        FindAnyObjectByType<FractureToggle>()?.SetInteractable(true);
+        FindAnyObjectByType<CameraControlPanel>()?.SetInteractable(true);
+
+        // Riabilita il bottone "Load DATA" così l'utente può cambiare paziente
+        if (loadButton != null) loadButton.interactable = true;
     }
 
     // ─── CT VOLUME ────────────────────────────────────────────────────────────
@@ -165,6 +269,7 @@ public class CTLoader : MonoBehaviour
         }
 
         _volObj = VolumeObjectFactory.CreateObject(_dataset);
+        _volObj.gameObject.SetActive(false); // nascosto finché la camera non è posizionata
         _volObj.transform.position = Vector3.zero;
         // UnityVolumeRendering mappa k → -Y (testa in basso).
         // Il flip (1,-1,1) inverte l'asse verticale senza alterare X/Z.
@@ -200,22 +305,22 @@ public class CTLoader : MonoBehaviour
 
         // ── Colori: scala di grigio CT clinica ────────────────────────────────
         tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(0f,       new Color(0.00f, 0.00f, 0.00f))); // nero (aria)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nLung,    new Color(0.10f, 0.10f, 0.10f))); // grigio scuro (polmone)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nFat,     new Color(0.28f, 0.26f, 0.24f))); // grigio medio-scuro (grasso)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nMuscle,  new Color(0.48f, 0.44f, 0.40f))); // grigio medio (muscolo)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nBone,    new Color(0.82f, 0.78f, 0.70f))); // beige chiaro (osso spongioso)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nCortex,  new Color(0.96f, 0.96f, 0.94f))); // quasi bianco (osso corticale)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nLung,    new Color(0.12f, 0.12f, 0.12f))); // grigio scuro (polmone)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nFat,     new Color(0.35f, 0.32f, 0.28f))); // grigio medio-scuro (grasso)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nMuscle,  new Color(0.58f, 0.54f, 0.48f))); // grigio medio (muscolo)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nBone,    new Color(0.92f, 0.88f, 0.80f))); // beige chiaro (osso spongioso)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nCortex,  new Color(1.00f, 1.00f, 0.98f))); // quasi bianco (osso corticale)
         tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(1f,       new Color(1.00f, 1.00f, 1.00f))); // bianco (massima densità)
 
         // ── Alpha: quasi trasparente per aria/molle, sempre più opaco verso l'osso ──
         // L'obiettivo è vedere il contorno del torace (faint) e le coste chiaramente.
         tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(0f,       0.000f)); // fuori corpo: zero
         tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nAir,     0.000f)); // aria: zero
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nLung,    0.006f)); // polmone: quasi trasparente
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nFat,     0.010f)); // tessuto molle: faint
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nMuscle,  0.018f)); // muscolo: lievemente visibile
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nBone,    0.12f));  // osso spongioso: salto di opacità
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nCortex,  0.85f));  // osso corticale: quasi pieno
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nLung,    0.008f)); // polmone: quasi trasparente
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nFat,     0.015f)); // tessuto molle: faint
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nMuscle,  0.028f)); // muscolo: lievemente visibile
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nBone,    0.25f));  // osso spongioso: salto di opacità
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nCortex,  0.92f));  // osso corticale: quasi pieno
         tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(1f,       1.00f));  // densità massima: opaco
 
         tf.GenerateTexture();
@@ -259,6 +364,7 @@ public class CTLoader : MonoBehaviour
 
         // ── Punto 3.1: costruisce il dizionario rib_id → FractureEntry ────────
         FractureData.Clear();
+        _baseColors.Clear();
         foreach (var f in data.fractures)
             FractureData[f.rib_id] = f;
 
@@ -349,7 +455,7 @@ public class CTLoader : MonoBehaviour
             };
 
             foreach (var rend in go.GetComponentsInChildren<Renderer>())
-                rend.material.color = col;
+                SetFractureColor(rend, col);
 
             Debug.Log($"[CTLoader] Caricata: {filename} → {frac.predicted_class} (conf={frac.confidence:P0})");
             yield return null;
@@ -382,7 +488,7 @@ public class CTLoader : MonoBehaviour
                 nUnclassified++;
 
                 foreach (var rend in go.GetComponentsInChildren<Renderer>())
-                    rend.material.color = new Color(0.5f, 0.5f, 0.5f, 0.35f);
+                    SetFractureColor(rend, new Color(0.5f, 0.5f, 0.5f, 0.35f));
 
                 Debug.Log($"[CTLoader] Caricata segmental (non classificata): {Path.GetFileName(meshFile)}");
                 yield return null;
@@ -391,9 +497,9 @@ public class CTLoader : MonoBehaviour
 
         // ── FRATTURE AMBIGUE ──────────────────────────────────────────────────
         // Caricate da ambiguousPath ({id}_ambiguous.json) → mesh _ambiguous{N}_mesh.obj.
-        if (!string.IsNullOrEmpty(ambiguousPath) && File.Exists(ambiguousPath))
+        if (!string.IsNullOrEmpty(_ambiguousPath) && File.Exists(_ambiguousPath))
         {
-            string ambJson = File.ReadAllText(ambiguousPath);
+            string ambJson = File.ReadAllText(_ambiguousPath);
             AmbiguousData ambData = JsonUtility.FromJson<AmbiguousData>(ambJson);
 
             if (ambData?.fractures != null)
@@ -431,7 +537,7 @@ public class CTLoader : MonoBehaviour
                     nUnclassified++;
 
                     foreach (var rend in go.GetComponentsInChildren<Renderer>())
-                        rend.material.color = new Color(0.5f, 0.5f, 0.5f, 0.35f);
+                        rend.material.color = new Color(0.5f, 0.5f, 0.5f, 0.55f);
 
                     Debug.Log($"[CTLoader] Caricata ambiguous: {Path.GetFileName(meshFile)}");
                     yield return null;

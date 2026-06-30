@@ -39,9 +39,19 @@ public class FractureToggle : MonoBehaviour
             return;
         }
 
+        // Disabilitato finché i dati non sono caricati
+        dropdown.interactable = false;
+
         // Sincronizza il valore iniziale senza triggerare il callback
         dropdown.SetValueWithoutNotify(ctLoader != null ? ctLoader.CurrentColorMode : 0);
         dropdown.onValueChanged.AddListener(OnDropdownChanged);
+    }
+
+    /// <summary>Chiamato da CTLoader dopo il caricamento completo.</summary>
+    public void SetInteractable(bool value)
+    {
+        if (dropdown != null)
+            dropdown.interactable = value;
     }
 
     void OnDestroy()
