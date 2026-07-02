@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 /// <summary>
@@ -35,7 +37,9 @@ public static class PatientRegistry
             return _cache;
         }
 
-        foreach (string patientDir in Directory.GetDirectories(patientsRoot))
+        foreach (string patientDir in Directory.GetDirectories(patientsRoot)
+            .OrderBy(d => { var m = Regex.Match(Path.GetFileName(d), @"\d+$"); return m.Success ? int.Parse(m.Value) : int.MaxValue; })
+            .ThenBy(d => Path.GetFileName(d)))
         {
             string id = Path.GetFileName(patientDir);
 

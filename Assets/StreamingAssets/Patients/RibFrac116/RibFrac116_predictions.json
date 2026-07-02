@@ -4,19 +4,19 @@
   "fractures": [
     {
       "rib_id": 2,
-      "predicted_class": "Non-displaced",
-      "confidence": 0.6591,
-      "prob_displaced": 0.208,
-      "prob_nondisplaced": 0.6591,
-      "prob_buckle": 0.1329
+      "predicted_class": "Buckled",
+      "confidence": 0.8654,
+      "prob_severe": 0.0591,
+      "prob_nondisplaced": 0.0755,
+      "prob_buckle": 0.8654
     },
     {
       "rib_id": 3,
-      "predicted_class": "Non-displaced",
-      "confidence": 0.7101,
-      "prob_displaced": 0.1955,
-      "prob_nondisplaced": 0.7101,
-      "prob_buckle": 0.0943
+      "predicted_class": "Buckled",
+      "confidence": 0.8863,
+      "prob_severe": 0.0498,
+      "prob_nondisplaced": 0.0639,
+      "prob_buckle": 0.8863
     }
   ]
 }

@@ -26,6 +26,14 @@ public class CTLoader : MonoBehaviour
     [Tooltip("Il pulsante Load DATA — viene disabilitato dopo il primo caricamento")]
     public UnityEngine.UI.Button loadButton;
 
+    [Header("Sezione Assiale CT")]
+    [Tooltip("Trascina qui il GameObject con AxialSliceController")]
+    public AxialSliceController axialSliceController;
+
+    [Header("Crop Cassa Toracica")]
+    [Tooltip("Trascina qui il GameObject con VolumeCropBox (opzionale)")]
+    public VolumeCropBox volumeCropBox;
+
     private VolumeDataset        _dataset;
     private VolumeRenderedObject _volObj;
     private GameObject           _fracturesParent;
@@ -71,7 +79,7 @@ public class CTLoader : MonoBehaviour
     // ── Punto 4: logica di colorazione a 3 stati ──────────────────────────────
     // 0 = Nessuna lesione  → mesh fratture nascoste
     // 1 = Lesione binaria  → tutte le mesh rosse
-    // 2 = Lesione per tipo → colori per classe (Displaced / Non-displaced / Buckle)
+    // 2 = Lesione per tipo → colori per classe (Severe / Not displaced / Buckled)
     public int CurrentColorMode { get; private set; } = 0;
 
     public void ApplyColorMode(int mode)
@@ -103,20 +111,21 @@ public class CTLoader : MonoBehaviour
         _baseColors[rend] = color;
     }
 
-    // Nome GameObject: "rib_XX_Classe" (es. "rib_01_Displaced", "rib_02_Non-displaced")
+    // Nome GameObject: "rib_XX_Classe" (es. "rib_01_Severe", "rib_02_Not displaced")
     static Color GetColorForChild(string goName, int mode)
     {
         if (mode == 1) return new Color(1f, 0.15f, 0.15f, 0.35f); // rosso semi-trasparente
 
-        // mode 2: colore per classe
+        // mode 2: colore per classe. Nota: split su '_' → parts[2] contiene la classe
+        // ("Not displaced" ha uno spazio, non un underscore, quindi resta intera).
         string[] parts = goName.Split('_');
         string cls = parts.Length >= 3 ? parts[2] : "";
         return cls switch
         {
-            "Displaced"     => new Color(0.91f, 0.47f, 0.13f, 0.35f), // arancio #E87722
-            "Non-displaced" => new Color(0.29f, 0.56f, 0.85f, 0.35f), // blu     #4A90D9
-            "Buckle"        => new Color(0.61f, 0.35f, 0.71f, 0.35f), // viola   #9B59B6
-            _               => new Color(0.5f, 0.5f, 0.5f, 0.35f)
+            "Severe"        => new Color(0.91f, 0.47f, 0.13f, 0.35f), // arancio #E87722
+            "Not displaced" => new Color(0.29f, 0.56f, 0.85f, 0.35f), // blu     #4A90D9
+            "Buckled"       => new Color(0.61f, 0.35f, 0.71f, 0.35f), // viola   #9B59B6
+            _               => new Color(0.25f, 0.25f, 0.28f, 0.55f)
         };
     }
 
@@ -177,7 +186,11 @@ public class CTLoader : MonoBehaviour
     // Va chiamato prima di LoadPatient() se un paziente è già stato caricato.
     public void ResetPatient()
     {
-        // Distruggi volume CT
+        // Notifica il controller della sezione assiale
+        axialSliceController?.OnPatientReset();
+
+        // Distruggi volume CT (il CropBox è figlio del volume, viene distrutto con esso)
+        volumeCropBox?.Clear();
         if (_volObj != null)
         {
             Destroy(_volObj.gameObject);
@@ -228,6 +241,10 @@ public class CTLoader : MonoBehaviour
         if (loadButton != null) loadButton.interactable = false;
 
         yield return StartCoroutine(LoadVolume(_niftiPath));
+
+        // Passa il volume al controller slice: DataTex e TFTex sono già pronti
+        if (_volObj != null)
+            axialSliceController?.OnPatientLoaded(_volObj);
 
         // Posiziona la camera PRIMA di mostrare il volume → nessun glitch visivo
         CameraController cam = FindAnyObjectByType<CameraController>();
@@ -295,39 +312,67 @@ public class CTLoader : MonoBehaviour
         float nLung   = N(-500f, 0.22f); // polmone
         float nFat    = N(-100f, 0.42f); // grasso / tessuto molle
         float nMuscle = N( 100f, 0.52f); // muscolo
-        float nBone   = N( 300f, 0.61f); // osso spongioso (inizio osso)
-        float nCortex = N( 700f, 0.74f); // osso corticale denso
+        float nBoneCut = N( 150f, 0.57f); // taglio secco appena sotto l'osso
+        float nBone   = N( 280f, 0.60f); // osso spongioso / coste sottili (inizio osso)
+        float nCortex = N( 600f, 0.72f); // osso corticale denso
 
         Debug.Log($"[CTLoader] TF positions — lung:{nLung:F3} fat:{nFat:F3} bone:{nBone:F3} cortex:{nCortex:F3}");
 
         UnityVolumeRendering.TransferFunction tf =
             ScriptableObject.CreateInstance<UnityVolumeRendering.TransferFunction>();
 
-        // ── Colori: scala di grigio CT clinica ────────────────────────────────
+        // ── Colori: scala di grigi pura ───────────────────────────────────────
+        // Aria → nero; osso spongioso → grigio chiaro; osso corticale → bianco.
+        // Il tessuto molle (fat/muscle) è comunque trasparente per l'alpha → non visibile.
         tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(0f,       new Color(0.00f, 0.00f, 0.00f))); // nero (aria)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nLung,    new Color(0.12f, 0.12f, 0.12f))); // grigio scuro (polmone)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nFat,     new Color(0.35f, 0.32f, 0.28f))); // grigio medio-scuro (grasso)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nMuscle,  new Color(0.58f, 0.54f, 0.48f))); // grigio medio (muscolo)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nBone,    new Color(0.92f, 0.88f, 0.80f))); // beige chiaro (osso spongioso)
-        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nCortex,  new Color(1.00f, 1.00f, 0.98f))); // quasi bianco (osso corticale)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nLung,    new Color(0.05f, 0.05f, 0.05f))); // quasi nero (polmone)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nFat,     new Color(0.30f, 0.30f, 0.30f))); // grigio scuro (grasso)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nMuscle,  new Color(0.50f, 0.50f, 0.50f))); // grigio medio (muscolo)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nBone,    new Color(0.75f, 0.75f, 0.75f))); // grigio chiaro (osso spongioso)
+        tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(nCortex,  new Color(0.95f, 0.95f, 0.95f))); // quasi bianco (osso corticale)
         tf.colourControlPoints.Add(new UnityVolumeRendering.TFColourControlPoint(1f,       new Color(1.00f, 1.00f, 1.00f))); // bianco (massima densità)
 
         // ── Alpha: quasi trasparente per aria/molle, sempre più opaco verso l'osso ──
-        // L'obiettivo è vedere il contorno del torace (faint) e le coste chiaramente.
+        // Fat/muscolo leggermente più alti rispetto alla versione grigia per rendere
+        // visibile il contorno del torace come in Slicer CT-Bones.
         tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(0f,       0.000f)); // fuori corpo: zero
         tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nAir,     0.000f)); // aria: zero
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nLung,    0.008f)); // polmone: quasi trasparente
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nFat,     0.015f)); // tessuto molle: faint
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nMuscle,  0.028f)); // muscolo: lievemente visibile
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nBone,    0.25f));  // osso spongioso: salto di opacità
-        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nCortex,  0.92f));  // osso corticale: quasi pieno
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nLung,    0.000f)); // polmone: trasparente
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nFat,     0.000f)); // grasso: trasparente
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nMuscle,   0.000f)); // muscolo: trasparente
+        // Taglio secco a ~150 HU: sotto l'osso alpha resta 0 (nessun tessuto molle).
+        // Poi ramp che dà opacità già allo spongioso/coste sottili (0.28) e satura
+        // sulla cortex (0.90). Così le estremità sottili delle coste diventano visibili
+        // senza far rientrare i tessuti molli.
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nBoneCut, 0.000f)); // taglio secco sotto l'osso
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nBone,    0.28f));  // osso spongioso / coste sottili: visibile
+        tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(nCortex,  0.90f));  // osso corticale: opaco
         tf.alphaControlPoints.Add(new UnityVolumeRendering.TFAlphaControlPoint(1f,       1.00f));  // densità massima: opaco
 
         tf.GenerateTexture();
         _volObj.SetTransferFunction(tf);
 
+        // Passa la window grayscale all'AxialSliceController:
+        // lo = nFat (inizio range visibile), hi = nCortex (osso corticale denso).
+        axialSliceController?.SetGrayscaleWindow(nFat, nCortex);
+
         // Campionamento: 3× è un buon compromesso qualità/performance per le coste
-        _volObj.SetSamplingRateMultiplier(3.0f);
+        _volObj.SetSamplingRateMultiplier(5.0f);
+
+        // ── Illuminazione volumetrica ─────────────────────────────────────────
+        // Calcola il gradiente del volume (SmoothedCentralDifference = meno rumore)
+        // e applica shading direzionale: le superfici verso la camera sono chiare,
+        // quelle rivolte altrove più scure → profondità immediatamente leggibile.
+        _volObj.SetGradientType(GradientType.SmoothedCentralDifference);
+        _volObj.SetLightingEnabled(true);
+        _volObj.SetLightSource(LightSource.ActiveCamera); // luce solidale alla camera
+
+        // Ray termination: il raggio si ferma quando l'opacità è satura →
+        // le coste posteriori non "trapassano" quelle anteriori già opache.
+        _volObj.SetRayTerminationEnabled(true);
+
+        // Applica il crop box per isolare la cassa toracica (se presente)
+        volumeCropBox?.Apply(_volObj);
 
         Debug.Log("[CTLoader] CT caricata.");
         yield return null;
@@ -448,10 +493,10 @@ public class CTLoader : MonoBehaviour
             // Palette color-blind safe (piano sezione 4.3)
             Color col = frac.predicted_class switch
             {
-                "Displaced"     => new Color(0.91f, 0.47f, 0.13f, 0.35f), // arancio #E87722
-                "Non-displaced" => new Color(0.29f, 0.56f, 0.85f, 0.35f), // blu     #4A90D9
-                "Buckle"        => new Color(0.61f, 0.35f, 0.71f, 0.35f), // viola   #9B59B6
-                _               => new Color(0.5f, 0.5f, 0.5f, 0.35f)
+                "Severe"        => new Color(0.91f, 0.47f, 0.13f, 0.35f), // arancio #E87722
+                "Not displaced" => new Color(0.29f, 0.56f, 0.85f, 0.35f), // blu     #4A90D9
+                "Buckled"       => new Color(0.61f, 0.35f, 0.71f, 0.35f), // viola   #9B59B6
+                _               => new Color(0.25f, 0.25f, 0.28f, 0.55f)
             };
 
             foreach (var rend in go.GetComponentsInChildren<Renderer>())
@@ -461,8 +506,11 @@ public class CTLoader : MonoBehaviour
             yield return null;
         }
 
-        // ── FRATTURE SEGMENTALI ───────────────────────────────────────────────
-        // Non appaiono in predictions.json → scansiono il folder e le tratto come non classificate.
+        // ── FRATTURE SEGMENTALI (fallback) ────────────────────────────────────
+        // Dalla nuova tassonomia a 3 classi le segmental sono fuse nella classe
+        // "Severe" e compaiono già in predictions.json (caricate sopra). Questo
+        // blocco resta solo come fallback: carica come "Unclassified" un'eventuale
+        // mesh segmental NON presente in predictions.json (rib_id non ancora caricato).
         if (Directory.Exists(objDir))
         {
             foreach (string mPath in Directory.GetFiles(objDir, "*_fracture*_meta.json"))
@@ -488,7 +536,7 @@ public class CTLoader : MonoBehaviour
                 nUnclassified++;
 
                 foreach (var rend in go.GetComponentsInChildren<Renderer>())
-                    SetFractureColor(rend, new Color(0.5f, 0.5f, 0.5f, 0.35f));
+                    SetFractureColor(rend, new Color(0.25f, 0.25f, 0.28f, 0.55f));
 
                 Debug.Log($"[CTLoader] Caricata segmental (non classificata): {Path.GetFileName(meshFile)}");
                 yield return null;
@@ -537,7 +585,7 @@ public class CTLoader : MonoBehaviour
                     nUnclassified++;
 
                     foreach (var rend in go.GetComponentsInChildren<Renderer>())
-                        rend.material.color = new Color(0.5f, 0.5f, 0.5f, 0.55f);
+                        rend.material.color = new Color(0.25f, 0.25f, 0.28f, 0.65f);
 
                     Debug.Log($"[CTLoader] Caricata ambiguous: {Path.GetFileName(meshFile)}");
                     yield return null;
@@ -671,7 +719,7 @@ public class FractureEntry
     public int    rib_id;
     public string predicted_class;
     public float  confidence;
-    public float  prob_displaced;
+    public float  prob_severe;
     public float  prob_nondisplaced;
     public float  prob_buckle;
 }

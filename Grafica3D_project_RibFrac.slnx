@@ -1,4 +1,7 @@
 ﻿<Solution>
+  <Project Path="UnityVolumeRendering.Runtime.csproj" />
+  <Project Path="UnityVolumeRendering.3rdParty.csproj" />
+  <Project Path="UnityVolumeRendering.Editor.csproj" />
   <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
 </Solution>

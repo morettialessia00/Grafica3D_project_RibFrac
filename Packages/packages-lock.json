@@ -1,15 +1,14 @@
 {
   "dependencies": {
     "com.mlavik1.easyvolumerenderer": {
-      "version": "https://github.com/mlavik1/UnityVolumeRendering.git",
+      "version": "file:com.mlavik1.easyvolumerenderer",
       "depth": 0,
-      "source": "git",
+      "source": "embedded",
       "dependencies": {
         "com.unity.modules.imageconversion": "1.0.0",
         "com.unity.modules.imgui": "1.0.0",
         "com.unity.modules.jsonserialize": "1.0.0"
-      },
-      "hash": "31bb8e0cdcede58d4376044d92b7718593115e0f"
+      }
     },
     "com.unity.ai.navigation": {
       "version": "2.0.12",

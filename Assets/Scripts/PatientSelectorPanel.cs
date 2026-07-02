@@ -23,13 +23,6 @@ public class PatientSelectorPanel : MonoBehaviour
     [Tooltip("Il Transform contenitore in cui vengono creati i bottoni (con VerticalLayoutGroup)")]
     public Transform buttonContainer;
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
-    void Awake()
-    {
-        // Il pannello parte nascosto
-        gameObject.SetActive(false);
-    }
-
     // ── API pubblica ──────────────────────────────────────────────────────────
 
     /// <summary>Apre il pannello e popola la lista pazienti.</summary>
@@ -77,7 +70,7 @@ public class PatientSelectorPanel : MonoBehaviour
 
             // Sfondo del bottone
             Image img = btnObj.AddComponent<Image>();
-            img.color = new Color(0.2f, 0.2f, 0.2f, 1f);
+            img.color = new Color(0.180f, 0.259f, 0.376f, 1f); // #2E4260
 
             // Componente Button
             Button btn = btnObj.AddComponent<Button>();
@@ -85,14 +78,14 @@ public class PatientSelectorPanel : MonoBehaviour
 
             // Altezza fissa: Layout Element comunica al VerticalLayoutGroup l'altezza voluta
             LayoutElement le = btnObj.AddComponent<LayoutElement>();
-            le.preferredHeight = 50f;
+            le.preferredHeight = 60f;
 
             // Testo figlio
             GameObject textObj = new GameObject("Label");
             textObj.transform.SetParent(btnObj.transform, false);
             TextMeshProUGUI label = textObj.AddComponent<TextMeshProUGUI>();
             label.text = captured.id;
-            label.fontSize = 18;
+            label.fontSize = 24;
             label.alignment = TextAlignmentOptions.Center;
             label.color = Color.white;
 

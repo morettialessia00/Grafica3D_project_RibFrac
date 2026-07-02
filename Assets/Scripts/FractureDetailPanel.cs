@@ -58,9 +58,9 @@ public class FractureDetailPanel : MonoBehaviour
         // Colore coerente con FractureLegend
         string hex = entry.predicted_class switch
         {
-            "Displaced"     => "#E87722",
-            "Non-displaced" => "#4A90D9",
-            "Buckle"        => "#9B59B6",
+            "Severe"        => "#E87722",
+            "Not displaced" => "#4A90D9",
+            "Buckled"       => "#9B59B6",
             _               => "#808080"
         };
 
@@ -70,7 +70,7 @@ public class FractureDetailPanel : MonoBehaviour
         _confidenceText.text = $"Confidence: <b>{entry.confidence:P0}</b>";
 
         // Mostra le 3 probabilità grezze solo se presenti nel JSON
-        bool hasProbs = entry.prob_displaced > 0f ||
+        bool hasProbs = entry.prob_severe > 0f ||
                         entry.prob_nondisplaced > 0f ||
                         entry.prob_buckle > 0f;
 
@@ -78,9 +78,9 @@ public class FractureDetailPanel : MonoBehaviour
         if (hasProbs)
         {
             _probsText.text =
-                $"<color=#E87722>Displaced</color>         {entry.prob_displaced:P0}\n" +
-                $"<color=#4A90D9>Non-displaced</color>  {entry.prob_nondisplaced:P0}\n" +
-                $"<color=#9B59B6>Buckle</color>              {entry.prob_buckle:P0}";
+                $"<color=#E87722>Severe</color>            {entry.prob_severe:P0}\n" +
+                $"<color=#4A90D9>Not displaced</color>  {entry.prob_nondisplaced:P0}\n" +
+                $"<color=#9B59B6>Buckled</color>           {entry.prob_buckle:P0}";
         }
     }
 
@@ -94,14 +94,14 @@ public class FractureDetailPanel : MonoBehaviour
     {
         _panel = MakeRect("FractureDetail_Panel", canvasRoot);
         RectTransform rt = _panel.GetComponent<RectTransform>();
-        rt.anchorMin        = new Vector2(1f, 0.5f);
-        rt.anchorMax        = new Vector2(1f, 0.5f);
-        rt.pivot            = new Vector2(1f, 0.5f);
-        rt.anchoredPosition = new Vector2(-14f, -125f);
-        rt.sizeDelta        = Vector2.zero;
+        rt.anchorMin        = new Vector2(1f, 0f);
+        rt.anchorMax        = new Vector2(1f, 0f);
+        rt.pivot            = new Vector2(1f, 0f);
+        rt.anchoredPosition = new Vector2(-14f, 300f);
+        rt.sizeDelta        = new Vector2(480f, 300f);
 
         Image bg = _panel.AddComponent<Image>();
-        bg.color = new Color(0.157f, 0.290f, 0.376f, 0.92f); // pannello #284A60
+        bg.color = new Color(0.149f, 0.208f, 0.282f, 0.92f); // pannello #263548
 
         VerticalLayoutGroup vlg = _panel.AddComponent<VerticalLayoutGroup>();
         vlg.padding                = new RectOffset(28, 32, 18, 24);
@@ -112,24 +112,20 @@ public class FractureDetailPanel : MonoBehaviour
         vlg.childForceExpandWidth  = false;
         vlg.childForceExpandHeight = false;
 
-        ContentSizeFitter csf = _panel.AddComponent<ContentSizeFitter>();
-        csf.verticalFit   = ContentSizeFitter.FitMode.PreferredSize;
-        csf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
-
         // Titolo: "Fracture N"
         _titleText = AddText(_panel.transform, "—",
-                             36f, FontStyles.Bold, new Color(0.722f, 0.847f, 0.910f, 1f), 420f, 50f); // testo #B8D8E8
+                             36f, FontStyles.Bold, new Color(0.816f, 0.910f, 1f, 1f), 420f, 50f); // testo #D0E8FF
 
         AddSpacer(_panel.transform, 8f);
 
         // Classe predetta (colorata)
         _classText = AddText(_panel.transform, "—",
-                             32f, FontStyles.Normal, new Color(0.722f, 0.847f, 0.910f, 1f), 420f, 44f); // testo #B8D8E8
+                             32f, FontStyles.Normal, new Color(0.816f, 0.910f, 1f, 1f), 420f, 44f); // testo #D0E8FF
 
         // Confidenza
         _confidenceText = AddText(_panel.transform, "—",
                                   26f, FontStyles.Normal,
-                                  new Color(0.416f, 0.667f, 0.733f, 1f), 420f, 36f); // testo secondario #6AAABB
+                                  new Color(0.420f, 0.670f, 0.820f, 1f), 420f, 36f); // testo secondario #6AAABB
 
         AddSpacer(_panel.transform, 8f);
 
@@ -141,7 +137,7 @@ public class FractureDetailPanel : MonoBehaviour
 
         _probsText = _probsContainer.AddComponent<TextMeshProUGUI>();
         _probsText.fontSize      = 24f;
-        _probsText.color         = new Color(0.416f, 0.667f, 0.733f, 1f); // testo secondario #6AAABB
+        _probsText.color         = new Color(0.420f, 0.670f, 0.820f, 1f); // testo secondario #6AAABB
         _probsText.lineSpacing   = 6f;
         _probsText.raycastTarget = false;
         _probsText.richText      = true;

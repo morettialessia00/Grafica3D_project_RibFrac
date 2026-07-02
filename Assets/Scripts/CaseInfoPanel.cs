@@ -20,7 +20,7 @@ public class CaseInfoPanel : MonoBehaviour
     [Tooltip("Mostra il totale fratture, es. 'Fratture totali: 6'")]
     public TextMeshProUGUI fractureCountText;
 
-    [Tooltip("Mostra i conteggi per classe (Displaced / Non-displaced / Buckle)")]
+    [Tooltip("Mostra i conteggi per classe (Severe / Not displaced / Buckled)")]
     public TextMeshProUGUI classBreakdownText;
 
     private const string PLACEHOLDER = "—";
@@ -55,7 +55,7 @@ public class CaseInfoPanel : MonoBehaviour
 
         SetText(patientIdText, "Patient ID: " + ExtractNumber(data.public_id));
 
-        int nDisplaced    = 0;
+        int nSevere       = 0;
         int nNonDisplaced = 0;
         int nBuckle       = 0;
 
@@ -65,18 +65,18 @@ public class CaseInfoPanel : MonoBehaviour
             {
                 switch (f.predicted_class)
                 {
-                    case "Displaced":     nDisplaced++;    break;
-                    case "Non-displaced": nNonDisplaced++; break;
-                    case "Buckle":        nBuckle++;       break;
+                    case "Severe":        nSevere++;       break;
+                    case "Not displaced": nNonDisplaced++; break;
+                    case "Buckled":       nBuckle++;       break;
                 }
             }
         }
 
         SetText(fractureCountText, $"<b><i>Total fractures:</i></b> {totalFractures}");
         SetText(classBreakdownText,
-            $"<i>Displaced:</i> {nDisplaced}\n" +
-            $"<i>Non-displaced:</i> {nNonDisplaced}\n" +
-            $"<i>Buckle:</i> {nBuckle}\n" +
+            $"<i>Severe:</i> {nSevere}\n" +
+            $"<i>Not displaced:</i> {nNonDisplaced}\n" +
+            $"<i>Buckled:</i> {nBuckle}\n" +
             $"<i>Unclassified:</i> {nUnclassified}");
     }
 
