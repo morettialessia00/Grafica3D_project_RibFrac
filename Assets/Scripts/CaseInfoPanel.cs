@@ -46,38 +46,37 @@ public class CaseInfoPanel : MonoBehaviour
         SetText(classBreakdownText, "Predictions not available");
     }
 
-    // ── Punto 3.2: popola il pannello dai dati predizioni ─────────────────────
-    // totalFractures = tutte le fratture caricate (classificate + segmental + ambigue)
-    // nUnclassified  = segmental + ambigue
-    public void Refresh(PredictionData data, int totalFractures, int nUnclassified = 0)
+    // ── Riepilogo (modi No lesions / All lesions) ─────────────────────────────
+    // Mostra ID paziente e totale mesh; il dettaglio per classe compare quando
+    // si seleziona un classificatore.
+    public void ShowSummary(string patientId, int totalFractures, int nAmbiguous)
     {
-        if (data == null) { Clear(); return; }
-
-        SetText(patientIdText, "Patient ID: " + ExtractNumber(data.public_id));
-
-        int nSevere       = 0;
-        int nNonDisplaced = 0;
-        int nBuckle       = 0;
-
-        if (data.fractures != null)
-        {
-            foreach (var f in data.fractures)
-            {
-                switch (f.predicted_class)
-                {
-                    case "Severe":        nSevere++;       break;
-                    case "Not displaced": nNonDisplaced++; break;
-                    case "Buckled":       nBuckle++;       break;
-                }
-            }
-        }
-
+        SetText(patientIdText, "Patient ID: " + ExtractNumber(patientId));
         SetText(fractureCountText, $"<b><i>Total fractures:</i></b> {totalFractures}");
         SetText(classBreakdownText,
-            $"<i>Severe:</i> {nSevere}\n" +
-            $"<i>Not displaced:</i> {nNonDisplaced}\n" +
-            $"<i>Buckled:</i> {nBuckle}\n" +
-            $"<i>Unclassified:</i> {nUnclassified}");
+            $"<i>Ambiguous:</i> {nAmbiguous}\n" +
+            "<i>Select a classifier</i>\n<i>for the breakdown</i>");
+    }
+
+    // ── Dettaglio per classificatore ──────────────────────────────────────────
+    // def          = classificatore attivo (definisce l'ordine delle classi)
+    // counts       = conteggio per nome-classe
+    // nUnclassified = mesh non classificate dal classificatore (incl. ambigue)
+    public void ShowClassifier(string patientId, FractureClasses.ClassifierDef def,
+                               int totalFractures, System.Collections.Generic.Dictionary<string, int> counts,
+                               int nUnclassified)
+    {
+        SetText(patientIdText, "Patient ID: " + ExtractNumber(patientId));
+        SetText(fractureCountText, $"<b><i>Total fractures:</i></b> {totalFractures}");
+
+        var sb = new System.Text.StringBuilder();
+        foreach (string cls in def.classes)
+        {
+            int n = counts != null && counts.TryGetValue(cls, out int v) ? v : 0;
+            sb.Append($"<i>{cls}:</i> {n}\n");
+        }
+        sb.Append($"<i>Unclassified:</i> {nUnclassified}");
+        SetText(classBreakdownText, sb.ToString());
     }
 
     // ── Helper null-safe ───────────────────────────────────────────────────────

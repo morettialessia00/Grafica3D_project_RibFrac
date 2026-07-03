@@ -6,9 +6,10 @@ using TMPro;
 /// <summary>
 /// Legenda colori fratture — pannello in alto a destra nel Canvas.
 ///
-/// Modo 0 (Nessuna lesione):  pannello nascosto.
-/// Modo 1 (Lesione binaria):  mostra "Lesione" in rosso.
-/// Modo 2 (Per tipo):         mostra Severe / Not displaced / Buckled / Unclassified.
+/// Modo 0 (No lesions):       pannello nascosto.
+/// Modo 1 (All lesions):      mostra "Fracture" in rosso.
+/// Modi 2-5 (Classificatori): mostra le classi del classificatore selezionato
+///                            (colori da FractureClasses) + Unclassified.
 ///
 /// Setup in Unity:
 ///   1. Nella Hierarchy, clicca col destro su un punto vuoto → Create Empty.
@@ -25,10 +26,9 @@ public class FractureLegend : MonoBehaviour
     [Tooltip("Lascia vuoto: trovato automaticamente se c'è un CTLoader in scena")]
     public CTLoader ctLoader;
 
-    private GameObject               _panel;
-    private int                      _lastMode = -1;
-    private readonly List<GameObject> _mode1Blocks = new List<GameObject>();
-    private readonly List<GameObject> _mode2Blocks = new List<GameObject>();
+    private GameObject      _panel;
+    private TextMeshProUGUI _content;   // blocco rich-text unico, aggiornato per modo
+    private int             _lastMode = -1;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     void Start()
@@ -85,30 +85,36 @@ public class FractureLegend : MonoBehaviour
 
         AddSpacer(_panel.transform, 6f);
 
-        // Modo 2: un blocco TMP con rich text per le 4 classi
-        // Uso ■ (U+25A0) colorato inline — perfettamente allineato col testo
-        _mode2Blocks.Add(AddRichBlock(_panel.transform,
-            "<color=#E87722>■</color>  Severe\n" +
-            "<color=#4A90D9>■</color>  Not displaced\n" +
-            "<color=#9B59B6>■</color>  Buckled\n" +
-            "<color=#808080>■</color>  Unclassified",
-            fontSize: 28f, preferredWidth: 300f, preferredHeight: 190f));
-
-        // Modo 1: un blocco TMP per la lesione binaria
-        _mode1Blocks.Add(AddRichBlock(_panel.transform,
-            "<color=#FF2626>■</color>  Fracture",
-            fontSize: 28f, preferredWidth: 300f, preferredHeight: 42f));
+        // Blocco rich-text unico: il testo viene rigenerato in Refresh in base al modo.
+        // Uso ■ (U+25A0) colorato inline — perfettamente allineato col testo.
+        GameObject block = AddRichBlock(_panel.transform, "",
+            fontSize: 28f, preferredWidth: 300f, preferredHeight: 200f);
+        _content = block.GetComponent<TextMeshProUGUI>();
     }
 
-    // ── Visibilità per modo ───────────────────────────────────────────────────
+    // ── Contenuto per modo ─────────────────────────────────────────────────────
     void Refresh(int mode)
     {
         _lastMode = mode;
         if (_panel == null) return;
 
         _panel.SetActive(mode > 0);
-        foreach (var go in _mode1Blocks) go.SetActive(mode == 1);
-        foreach (var go in _mode2Blocks) go.SetActive(mode == 2);
+        if (mode <= 0 || _content == null) return;
+
+        if (mode == FractureClasses.ModeAll)
+        {
+            _content.text = "<color=#FF2626>■</color>  Fracture";
+            return;
+        }
+
+        int k = FractureClasses.ClassifierIndex(mode);
+        if (k < 0) { _content.text = ""; return; }
+
+        var sb = new System.Text.StringBuilder();
+        foreach (string cls in FractureClasses.Classifiers[k].classes)
+            sb.Append($"<color={FractureClasses.Hex(cls)}>■</color>  {cls}\n");
+        sb.Append($"<color={FractureClasses.UnclassifiedHex}>■</color>  Unclassified");
+        _content.text = sb.ToString();
     }
 
     // ── Helpers UI ────────────────────────────────────────────────────────────

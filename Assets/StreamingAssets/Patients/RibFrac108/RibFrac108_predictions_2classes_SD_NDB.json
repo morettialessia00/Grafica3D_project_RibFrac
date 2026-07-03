@@ -1,0 +1,62 @@
+{
+  "public_id": "RibFrac108",
+  "n_fractures": 8,
+  "fractures": [
+    {
+      "rib_id": 1,
+      "predicted_class": "Not severe",
+      "confidence": 0.8415,
+      "prob_severe": 0.1585,
+      "prob_nonsevere": 0.8415
+    },
+    {
+      "rib_id": 2,
+      "predicted_class": "Not severe",
+      "confidence": 0.5823,
+      "prob_severe": 0.4177,
+      "prob_nonsevere": 0.5823
+    },
+    {
+      "rib_id": 3,
+      "predicted_class": "Not severe",
+      "confidence": 0.7914,
+      "prob_severe": 0.2086,
+      "prob_nonsevere": 0.7914
+    },
+    {
+      "rib_id": 5,
+      "predicted_class": "Not severe",
+      "confidence": 0.6244,
+      "prob_severe": 0.3756,
+      "prob_nonsevere": 0.6244
+    },
+    {
+      "rib_id": 7,
+      "predicted_class": "Not severe",
+      "confidence": 0.7213,
+      "prob_severe": 0.2787,
+      "prob_nonsevere": 0.7213
+    },
+    {
+      "rib_id": 11,
+      "predicted_class": "Severe",
+      "confidence": 0.7259,
+      "prob_severe": 0.7259,
+      "prob_nonsevere": 0.2741
+    },
+    {
+      "rib_id": 12,
+      "predicted_class": "Not severe",
+      "confidence": 0.685,
+      "prob_severe": 0.315,
+      "prob_nonsevere": 0.685
+    },
+    {
+      "rib_id": 13,
+      "predicted_class": "Not severe",
+      "confidence": 0.7199,
+      "prob_severe": 0.2801,
+      "prob_nonsevere": 0.7199
+    }
+  ]
+}

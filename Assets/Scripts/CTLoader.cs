@@ -12,10 +12,10 @@ public class CTLoader : MonoBehaviour
     public PatientSelectorPanel patientSelectorPanel;
 
     // Percorsi impostati a runtime da PatientSelectorPanel tramite LoadPatient()
-    private string _niftiPath       = "";
-    private string _predictionsPath = "";
-    private string _ambiguousPath   = "";
-    private string _objFolder       = "";
+    private string _niftiPath     = "";
+    private string _patientDir    = "";
+    private string _ambiguousPath = "";
+    private string _objFolder     = "";
 
     [Header("Visualizzazione")]
     [Tooltip("Fattore di scala uniforme del volume CT. Aumenta se la CT appare troppo piccola.")]
@@ -55,9 +55,29 @@ public class CTLoader : MonoBehaviour
     /// </summary>
     public void SetHoveredObject(GameObject go) { _hoveredObject = go; }
 
-    // ── Dati predizioni esposti (rib_id → FractureEntry) ─────────────────────
-    public Dictionary<int, FractureEntry> FractureData { get; private set; }
+    // ── Dati predizioni per classificatore ───────────────────────────────────
+    // Un dizionario rib_id → FractureEntry per ciascuno dei 4 classificatori.
+    private readonly Dictionary<int, FractureEntry>[] _classifierData =
+        new Dictionary<int, FractureEntry>[FractureClasses.Classifiers.Length];
+
+    // Dizionario del classificatore attualmente selezionato (vuoto se non in
+    // modalita classificatore). Usato da FractureSelector per il pannello dettaglio.
+    private static readonly Dictionary<int, FractureEntry> _emptyData
         = new Dictionary<int, FractureEntry>();
+    public Dictionary<int, FractureEntry> FractureData
+    {
+        get
+        {
+            int k = FractureClasses.ClassifierIndex(CurrentColorMode);
+            return (k >= 0 && _classifierData[k] != null) ? _classifierData[k] : _emptyData;
+        }
+    }
+
+    // Numero totale di mesh-frattura caricate (classificate + ambigue) per il paziente.
+    private int _totalFractureMeshes = 0;
+    // Numero di mesh ambigue caricate.
+    private int _nAmbiguousMeshes = 0;
+
     public string  CurrentPatientId  { get; private set; } = "";
     public bool    HasPredictions    { get; private set; } = false;
 
@@ -76,11 +96,17 @@ public class CTLoader : MonoBehaviour
         _fracturesParent.SetActive(visible);
     }
 
-    // ── Punto 4: logica di colorazione a 3 stati ──────────────────────────────
-    // 0 = Nessuna lesione  → mesh fratture nascoste
-    // 1 = Lesione binaria  → tutte le mesh rosse
-    // 2 = Lesione per tipo → colori per classe (Severe / Not displaced / Buckled)
+    // ── Logica di colorazione a 6 stati ───────────────────────────────────────
+    // 0 = No lesions      → mesh fratture nascoste
+    // 1 = All lesions     → tutte le mesh rosse (vista binaria)
+    // 2 = Classificatore 1 → colori per classe dal JSON 4classes
+    // 3 = Classificatore 2 → colori per classe dal JSON 3classes D_ND_B
+    // 4 = Classificatore 3 → colori per classe dal JSON 3classes SD_ND_B
+    // 5 = Classificatore 4 → colori per classe dal JSON 2classes SD_NDB
     public int CurrentColorMode { get; private set; } = 0;
+
+    /// <summary>Indice 0..3 del classificatore attivo, o -1 se non in modalita classificatore.</summary>
+    public int CurrentClassifierIndex => FractureClasses.ClassifierIndex(CurrentColorMode);
 
     public void ApplyColorMode(int mode)
     {
@@ -88,20 +114,65 @@ public class CTLoader : MonoBehaviour
 
         if (_fracturesParent == null) return;
 
-        if (mode == 0)
+        // No lesions: nascondi tutto e mostra il riepilogo nel Case INFO.
+        if (mode == FractureClasses.ModeNone)
         {
             _fracturesParent.SetActive(false);
+            caseInfoPanel?.ShowSummary(CurrentPatientId, _totalFractureMeshes, _nAmbiguousMeshes);
             return;
         }
 
         _fracturesParent.SetActive(true);
 
+        // All lesions: tutte rosse.
+        if (mode == FractureClasses.ModeAll)
+        {
+            foreach (Transform child in _fracturesParent.transform)
+                foreach (var rend in child.GetComponentsInChildren<Renderer>())
+                    SetFractureColor(rend, FractureClasses.BinaryColor);
+
+            caseInfoPanel?.ShowSummary(CurrentPatientId, _totalFractureMeshes, _nAmbiguousMeshes);
+            return;
+        }
+
+        // Modalita classificatore: colora per classe predetta e conta per classe.
+        int k = FractureClasses.ClassifierIndex(mode);
+        Dictionary<int, FractureEntry> data =
+            (k >= 0 && _classifierData[k] != null) ? _classifierData[k] : _emptyData;
+        FractureClasses.ClassifierDef def = FractureClasses.Classifiers[k];
+
+        var counts = new Dictionary<string, int>();
+        foreach (string cls in def.classes) counts[cls] = 0;
+        int nUnclassified = 0;
+
         foreach (Transform child in _fracturesParent.transform)
         {
-            Color col = GetColorForChild(child.name, mode);
+            var info = child.GetComponent<FractureMeshInfo>();
+            int ribId = info != null ? info.ribId : -1;
+            bool ambiguous = info != null && info.isAmbiguous;
+
+            string cls = null;
+            if (!ambiguous && data.TryGetValue(ribId, out FractureEntry e))
+                cls = e.predicted_class;
+
+            Color col;
+            if (cls != null && counts.ContainsKey(cls))
+            {
+                col = FractureClasses.MeshColor(cls);
+                counts[cls]++;
+            }
+            else
+            {
+                col = FractureClasses.UnclassifiedMeshColor;
+                nUnclassified++;
+            }
+
             foreach (var rend in child.GetComponentsInChildren<Renderer>())
                 SetFractureColor(rend, col);
         }
+
+        caseInfoPanel?.ShowClassifier(CurrentPatientId, def, _totalFractureMeshes,
+                                      counts, nUnclassified);
     }
 
     // Helper: imposta colore e registra il colore base per la modulazione depth
@@ -109,24 +180,6 @@ public class CTLoader : MonoBehaviour
     {
         rend.material.color = color;
         _baseColors[rend] = color;
-    }
-
-    // Nome GameObject: "rib_XX_Classe" (es. "rib_01_Severe", "rib_02_Not displaced")
-    static Color GetColorForChild(string goName, int mode)
-    {
-        if (mode == 1) return new Color(1f, 0.15f, 0.15f, 0.35f); // rosso semi-trasparente
-
-        // mode 2: colore per classe. Nota: split su '_' → parts[2] contiene la classe
-        // ("Not displaced" ha uno spazio, non un underscore, quindi resta intera).
-        string[] parts = goName.Split('_');
-        string cls = parts.Length >= 3 ? parts[2] : "";
-        return cls switch
-        {
-            "Severe"        => new Color(0.91f, 0.47f, 0.13f, 0.35f), // arancio #E87722
-            "Not displaced" => new Color(0.29f, 0.56f, 0.85f, 0.35f), // blu     #4A90D9
-            "Buckled"       => new Color(0.61f, 0.35f, 0.71f, 0.35f), // viola   #9B59B6
-            _               => new Color(0.25f, 0.25f, 0.28f, 0.55f)
-        };
     }
 
     // ── Depth sort per-frame ──────────────────────────────────────────────────
@@ -206,10 +259,12 @@ public class CTLoader : MonoBehaviour
         }
 
         // Reset dizionari e buffer
-        FractureData.Clear();
+        for (int i = 0; i < _classifierData.Length; i++) _classifierData[i] = null;
         _baseColors.Clear();
         _depthSortBuffer.Clear();
         _hoveredObject = null;
+        _totalFractureMeshes = 0;
+        _nAmbiguousMeshes    = 0;
 
         // Reset stati
         HasPredictions   = false;
@@ -227,10 +282,11 @@ public class CTLoader : MonoBehaviour
     {
         ResetPatient();
 
-        _niftiPath       = config.niftiPath;
-        _predictionsPath = config.predictionsPath;
-        _ambiguousPath   = config.ambiguousPath;
-        _objFolder       = config.meshFolder;
+        _niftiPath     = config.niftiPath;
+        _patientDir    = config.patientDir;
+        _ambiguousPath = config.ambiguousPath;
+        _objFolder     = config.meshFolder;
+        CurrentPatientId = config.id;
 
         StartCoroutine(LoadAll());
     }
@@ -257,7 +313,7 @@ public class CTLoader : MonoBehaviour
         if (_volObj != null)
             _volObj.gameObject.SetActive(true);
 
-        yield return StartCoroutine(LoadFractures(_predictionsPath, _objFolder));
+        yield return StartCoroutine(LoadFractures(_objFolder));
 
         // Abilita dropdown e controlli camera ora che i dati sono pronti
         FindAnyObjectByType<FractureToggle>()?.SetInteractable(true);
@@ -379,7 +435,7 @@ public class CTLoader : MonoBehaviour
     }
 
     // ─── FRATTURE OBJ ─────────────────────────────────────────────────────────
-    IEnumerator LoadFractures(string jsonPath, string objDir)
+    IEnumerator LoadFractures(string objDir)
     {
         if (_dataset == null)
         {
@@ -387,38 +443,43 @@ public class CTLoader : MonoBehaviour
             yield break;
         }
 
-        // ── Punto 3.4: JSON mancante → paziente non nel test set ─────────────
-        if (!File.Exists(jsonPath))
+        // ── Carica le predizioni di TUTTI i classificatori ────────────────────
+        // Ogni classificatore ha un file JSON diverso ({id}{suffix}.json). Le mesh
+        // sono le stesse per tutti: cambia solo l'etichetta di classe per costa.
+        _baseColors.Clear();
+        bool anyPredictions = false;
+        for (int k = 0; k < FractureClasses.Classifiers.Length; k++)
         {
-            HasPredictions    = false;
-            CurrentPatientId  = ExtractPatientId(jsonPath);
-            Debug.LogWarning($"[CTLoader] JSON predizioni non trovato: {jsonPath}. " +
+            string cPath = Path.Combine(_patientDir,
+                CurrentPatientId + FractureClasses.Classifiers[k].fileSuffix + ".json");
+            var dict = new Dictionary<int, FractureEntry>();
+
+            if (File.Exists(cPath))
+            {
+                PredictionData pd = JsonUtility.FromJson<PredictionData>(File.ReadAllText(cPath));
+                if (pd?.fractures != null)
+                {
+                    foreach (var f in pd.fractures) dict[f.rib_id] = f;
+                    anyPredictions = true;
+                }
+                else Debug.LogError($"[CTLoader] JSON malformato: {cPath}");
+            }
+            else Debug.LogWarning($"[CTLoader] JSON classificatore non trovato: {cPath}");
+
+            _classifierData[k] = dict;
+        }
+
+        // Nessun file di predizione → paziente non nel test set.
+        if (!anyPredictions)
+        {
+            HasPredictions = false;
+            Debug.LogWarning($"[CTLoader] Nessuna predizione per {CurrentPatientId}. " +
                              "Paziente non nel test set.");
             caseInfoPanel?.ShowNotInTestSet(CurrentPatientId);
             yield break;
         }
 
-        string json = File.ReadAllText(jsonPath);
-        PredictionData data = JsonUtility.FromJson<PredictionData>(json);
-
-        if (data == null || data.fractures == null)
-        {
-            Debug.LogError("[CTLoader] JSON malformato.");
-            yield break;
-        }
-
-        // ── Punto 3.1: costruisce il dizionario rib_id → FractureEntry ────────
-        FractureData.Clear();
-        _baseColors.Clear();
-        foreach (var f in data.fractures)
-            FractureData[f.rib_id] = f;
-
-        CurrentPatientId = data.public_id;
-        HasPredictions   = true;
-
-        // Il pannello Case INFO viene aggiornato alla fine, dopo aver contato
-        // anche le fratture segmentali e ambigue (vedi chiamata a caseInfoPanel?.Refresh
-        // alla fine di questo metodo).
+        HasPredictions = true;
 
         // ── Matrice voxel → Unity world ───────────────────────────────────────
         // UnityVolumeRendering posiziona il volume come:
@@ -445,119 +506,66 @@ public class CTLoader : MonoBehaviour
             new Vector4(-cx,  -cz,   -cy,    1f)   // traslazione
         );
 
-        _fracturesParent = new GameObject($"{data.public_id}_fractures");
-        _fracturesParent.SetActive(false); // nascoste finché l'utente non preme il pulsante
+        _fracturesParent = new GameObject($"{CurrentPatientId}_fractures");
+        _fracturesParent.SetActive(false); // nascoste finché l'utente non seleziona una modalità
 
-        // Traccia i rib_id già caricati per evitare duplicati tra i tre tipi
+        // ── CARICA TUTTE LE MESH-FRATTURA (una sola volta) ────────────────────
+        // Le mesh sono indipendenti dal classificatore: qui si caricano tutte quelle
+        // presenti nella cartella; il colore/classe viene assegnato in ApplyColorMode
+        // in base al classificatore selezionato. Ogni GameObject porta un
+        // FractureMeshInfo con rib_id e flag ambigua.
         var loadedRibIds = new HashSet<int>();
-        int nUnclassified = 0; // segmental + ambigue
-
-        // ── FRATTURE CLASSIFICATE ─────────────────────────────────────────────
-        foreach (var frac in data.fractures)
-        {
-            string filename = $"{data.public_id}_fracture{frac.rib_id:D2}_mesh.obj";
-            string metaName = $"{data.public_id}_fracture{frac.rib_id:D2}_meta.json";
-            string objPath  = Path.Combine(objDir, filename);
-            string metaPath = Path.Combine(objDir, metaName);
-
-            if (!File.Exists(objPath))
-            {
-                Debug.LogWarning($"[CTLoader] OBJ non trovato: {objPath}");
-                continue;
-            }
-
-            // ── Calcola trasformazione OBJ mm → Unity world ───────────────────
-            // Le mesh OBJ sono in mm world space (trasformate con l'affine NIfTI dal pipeline Python).
-            // Serve: affine⁻¹ per tornare in spazio voxel, poi T_vox per Unity.
-            Matrix4x4 T_full = Matrix4x4.identity;
-            if (File.Exists(metaPath))
-            {
-                Matrix4x4 affine    = ParseAffineFromMetaJson(metaPath);
-                Matrix4x4 affineInv = affine.inverse;
-                T_full = T_vox * affineInv;
-            }
-            else
-            {
-                Debug.LogWarning($"[CTLoader] Meta JSON non trovato: {metaPath}. " +
-                                 "Le mesh potrebbero non essere allineate.");
-            }
-
-            GameObject go = SimpleOBJLoader.Load(objPath, vertexTransform: T_full);
-            if (go == null) continue;
-
-            go.name = $"rib_{frac.rib_id:D2}_{frac.predicted_class}";
-            go.transform.SetParent(_fracturesParent.transform);
-            go.AddComponent<MeshCollider>(); // punto 5.1: necessario per il raycast al click
-            loadedRibIds.Add(frac.rib_id);
-
-            // Palette color-blind safe (piano sezione 4.3)
-            Color col = frac.predicted_class switch
-            {
-                "Severe"        => new Color(0.91f, 0.47f, 0.13f, 0.35f), // arancio #E87722
-                "Not displaced" => new Color(0.29f, 0.56f, 0.85f, 0.35f), // blu     #4A90D9
-                "Buckled"       => new Color(0.61f, 0.35f, 0.71f, 0.35f), // viola   #9B59B6
-                _               => new Color(0.25f, 0.25f, 0.28f, 0.55f)
-            };
-
-            foreach (var rend in go.GetComponentsInChildren<Renderer>())
-                SetFractureColor(rend, col);
-
-            Debug.Log($"[CTLoader] Caricata: {filename} → {frac.predicted_class} (conf={frac.confidence:P0})");
-            yield return null;
-        }
-
-        // ── FRATTURE SEGMENTALI (fallback) ────────────────────────────────────
-        // Dalla nuova tassonomia a 3 classi le segmental sono fuse nella classe
-        // "Severe" e compaiono già in predictions.json (caricate sopra). Questo
-        // blocco resta solo come fallback: carica come "Unclassified" un'eventuale
-        // mesh segmental NON presente in predictions.json (rib_id non ancora caricato).
         if (Directory.Exists(objDir))
         {
-            foreach (string mPath in Directory.GetFiles(objDir, "*_fracture*_meta.json"))
+            foreach (string objPath in Directory.GetFiles(objDir, $"{CurrentPatientId}_fracture*_mesh.obj"))
             {
-                if (ParseLabelNameFromMeta(mPath) != "segmental") continue;
-
-                int ribId = ParseLabelIdFromMeta(mPath);
+                int ribId = ExtractIndexFromName(Path.GetFileName(objPath), "_fracture");
                 if (ribId < 0 || loadedRibIds.Contains(ribId)) continue;
 
-                string meshFile = mPath.Replace("_meta.json", "_mesh.obj");
-                if (!File.Exists(meshFile)) continue;
+                // ── Trasformazione OBJ mm → Unity world ────────────────────────
+                // Le mesh OBJ sono in mm world space (affine NIfTI dal pipeline Python).
+                // Serve: affine⁻¹ per tornare in spazio voxel, poi T_vox per Unity.
+                string metaPath = objPath.Replace("_mesh.obj", "_meta.json");
+                Matrix4x4 T_full = Matrix4x4.identity;
+                if (File.Exists(metaPath))
+                    T_full = T_vox * ParseAffineFromMetaJson(metaPath).inverse;
+                else
+                    Debug.LogWarning($"[CTLoader] Meta JSON non trovato: {metaPath}. " +
+                                     "Le mesh potrebbero non essere allineate.");
 
-                Matrix4x4 affine = ParseAffineFromMetaJson(mPath);
-                Matrix4x4 T_full = T_vox * affine.inverse;
-
-                GameObject go = SimpleOBJLoader.Load(meshFile, vertexTransform: T_full);
+                GameObject go = SimpleOBJLoader.Load(objPath, vertexTransform: T_full);
                 if (go == null) continue;
 
-                go.name = $"rib_{ribId:D2}_Unclassified";
+                go.name = $"rib_{ribId:D2}";
                 go.transform.SetParent(_fracturesParent.transform);
-                go.AddComponent<MeshCollider>(); // punto 5.1
+                go.AddComponent<MeshCollider>(); // necessario per il raycast al click
+                var info = go.AddComponent<FractureMeshInfo>();
+                info.ribId       = ribId;
+                info.isAmbiguous = false;
                 loadedRibIds.Add(ribId);
-                nUnclassified++;
 
                 foreach (var rend in go.GetComponentsInChildren<Renderer>())
-                    SetFractureColor(rend, new Color(0.25f, 0.25f, 0.28f, 0.55f));
+                    SetFractureColor(rend, FractureClasses.UnclassifiedMeshColor);
 
-                Debug.Log($"[CTLoader] Caricata segmental (non classificata): {Path.GetFileName(meshFile)}");
                 yield return null;
             }
         }
 
         // ── FRATTURE AMBIGUE ──────────────────────────────────────────────────
         // Caricate da ambiguousPath ({id}_ambiguous.json) → mesh _ambiguous{N}_mesh.obj.
+        // Non appartengono a nessun classificatore: restano sempre "Unclassified".
         if (!string.IsNullOrEmpty(_ambiguousPath) && File.Exists(_ambiguousPath))
         {
-            string ambJson = File.ReadAllText(_ambiguousPath);
-            AmbiguousData ambData = JsonUtility.FromJson<AmbiguousData>(ambJson);
+            AmbiguousData ambData = JsonUtility.FromJson<AmbiguousData>(File.ReadAllText(_ambiguousPath));
 
             if (ambData?.fractures != null)
             {
                 foreach (var amb in ambData.fractures)
                 {
                     string meshFile = Path.Combine(objDir,
-                        $"{data.public_id}_ambiguous{amb.rib_id:D2}_mesh.obj");
+                        $"{CurrentPatientId}_ambiguous{amb.rib_id:D2}_mesh.obj");
                     string mPath = Path.Combine(objDir,
-                        $"{data.public_id}_ambiguous{amb.rib_id:D2}_meta.json");
+                        $"{CurrentPatientId}_ambiguous{amb.rib_id:D2}_meta.json");
 
                     if (!File.Exists(meshFile))
                     {
@@ -567,52 +575,48 @@ public class CTLoader : MonoBehaviour
 
                     Matrix4x4 T_full = Matrix4x4.identity;
                     if (File.Exists(mPath))
-                    {
-                        Matrix4x4 affine = ParseAffineFromMetaJson(mPath);
-                        T_full = T_vox * affine.inverse;
-                    }
+                        T_full = T_vox * ParseAffineFromMetaJson(mPath).inverse;
                     else
-                    {
                         Debug.LogWarning($"[CTLoader] Meta JSON ambiguous non trovato: {mPath}.");
-                    }
 
                     GameObject go = SimpleOBJLoader.Load(meshFile, vertexTransform: T_full);
                     if (go == null) continue;
 
-                    go.name = $"rib_{amb.rib_id:D2}_Unclassified";
+                    go.name = $"amb_{amb.rib_id:D2}";
                     go.transform.SetParent(_fracturesParent.transform);
-                    go.AddComponent<MeshCollider>(); // punto 5.1
-                    nUnclassified++;
+                    go.AddComponent<MeshCollider>();
+                    var info = go.AddComponent<FractureMeshInfo>();
+                    info.ribId       = amb.rib_id;
+                    info.isAmbiguous = true;
+                    _nAmbiguousMeshes++;
 
                     foreach (var rend in go.GetComponentsInChildren<Renderer>())
-                        rend.material.color = new Color(0.25f, 0.25f, 0.28f, 0.65f);
+                        SetFractureColor(rend, FractureClasses.UnclassifiedMeshColor);
 
                     Debug.Log($"[CTLoader] Caricata ambiguous: {Path.GetFileName(meshFile)}");
                     yield return null;
                 }
-
-                Debug.Log($"[CTLoader] Fratture ambigue caricate: {ambData.fractures.Length}");
             }
         }
 
-        // ── Punto 3.2: aggiorna il pannello Case INFO con tutti i conteggi ──────
-        // Usa childCount invece di loadedRibIds.Count: le fratture ambigue vengono
-        // caricate ma non aggiunte al HashSet, quindi childCount è l'unico conteggio affidabile.
-        int totalLoaded = _fracturesParent.transform.childCount;
-        caseInfoPanel?.Refresh(data, totalLoaded, nUnclassified);
+        // ── Conteggi totali e stato iniziale del pannello Case INFO ────────────
+        _totalFractureMeshes = _fracturesParent.transform.childCount;
+        caseInfoPanel?.ShowSummary(CurrentPatientId, _totalFractureMeshes, _nAmbiguousMeshes);
 
         Debug.Log($"[CTLoader] Caricamento completato. " +
-                  $"Classificate: {data.fractures.Length}, Non classificate: {nUnclassified}, Totale: {loadedRibIds.Count}");
+                  $"Mesh totali: {_totalFractureMeshes} (ambigue: {_nAmbiguousMeshes}).");
     }
 
-    // ─── Helper: estrae public_id dal percorso del file JSON ─────────────────
-    // Es. "C:/.../RibFrac108_predictions.json" → "RibFrac108"
-    // Es. "C:/.../RibFrac108_predictions.json" → "RibFrac108"
-    static string ExtractPatientId(string jsonPath)
+    // ─── Helper: estrae l'indice numerico dopo un marker nel nome file ───────
+    // Es. ("RibFrac108_fracture07_mesh.obj", "_fracture") → 7
+    static int ExtractIndexFromName(string fileName, string marker)
     {
-        const string suffix = "_predictions";
-        string name = Path.GetFileNameWithoutExtension(jsonPath);
-        return name.EndsWith(suffix) ? name.Substring(0, name.Length - suffix.Length) : name;
+        int i = fileName.IndexOf(marker);
+        if (i < 0) return -1;
+        i += marker.Length;
+        var sb = new StringBuilder();
+        while (i < fileName.Length && char.IsDigit(fileName[i])) { sb.Append(fileName[i]); i++; }
+        return sb.Length > 0 && int.TryParse(sb.ToString(), out int v) ? v : -1;
     }
 
     // ─── Parsing affine dal meta JSON ─────────────────────────────────────────
@@ -678,38 +682,6 @@ public class CTLoader : MonoBehaviour
         return m;
     }
 
-    // ─── Helper: legge label_name dal meta JSON ─────────────────────────────
-    static string ParseLabelNameFromMeta(string metaPath)
-    {
-        string raw = File.ReadAllText(metaPath);
-        int idx = raw.IndexOf("\"label_name\"");
-        if (idx < 0) return "";
-        int colon = raw.IndexOf(':', idx);
-        if (colon < 0) return "";
-        int q1 = raw.IndexOf('"', colon + 1);
-        if (q1 < 0) return "";
-        int q2 = raw.IndexOf('"', q1 + 1);
-        if (q2 < 0) return "";
-        return raw.Substring(q1 + 1, q2 - q1 - 1);
-    }
-
-    // ─── Helper: legge label_id dal meta JSON ──────────────────────────────
-    static int ParseLabelIdFromMeta(string metaPath)
-    {
-        string raw = File.ReadAllText(metaPath);
-        int idx = raw.IndexOf("\"label_id\"");
-        if (idx < 0) return -1;
-        int colon = raw.IndexOf(':', idx);
-        if (colon < 0) return -1;
-        int start = colon + 1;
-        while (start < raw.Length && (raw[start] == ' ' || raw[start] == '\n' ||
-                                      raw[start] == '\r' || raw[start] == '\t'))
-            start++;
-        var sb2 = new StringBuilder();
-        for (int i = start; i < raw.Length && char.IsDigit(raw[i]); i++)
-            sb2.Append(raw[i]);
-        return sb2.Length > 0 && int.TryParse(sb2.ToString(), out int v) ? v : -1;
-    }
 }
 
 // ─── STRUTTURE JSON ───────────────────────────────────────────────────────────
@@ -719,9 +691,14 @@ public class FractureEntry
     public int    rib_id;
     public string predicted_class;
     public float  confidence;
-    public float  prob_severe;
+    // Probabilita per classe. Ogni classificatore popola solo i campi che gli
+    // competono; gli altri restano 0 (JsonUtility ignora le chiavi assenti).
+    public float  prob_displaced;
     public float  prob_nondisplaced;
     public float  prob_buckle;
+    public float  prob_segmental;
+    public float  prob_severe;
+    public float  prob_nonsevere;
 }
 
 [System.Serializable]

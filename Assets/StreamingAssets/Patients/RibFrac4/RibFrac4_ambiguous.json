@@ -1,0 +1,15 @@
+{
+  "public_id": "RibFrac4",
+  "n_fractures": 1,
+  "fractures": [
+    {
+      "rib_id": 5,
+      "predicted_class": null,
+      "confidence": null,
+      "prob_displaced": null,
+      "prob_nondisplaced": null,
+      "prob_buckle": null,
+      "ambiguous": true
+    }
+  ]
+}

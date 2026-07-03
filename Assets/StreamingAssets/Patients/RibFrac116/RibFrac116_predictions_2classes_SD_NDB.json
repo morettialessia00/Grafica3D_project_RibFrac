@@ -1,0 +1,20 @@
+{
+  "public_id": "RibFrac116",
+  "n_fractures": 2,
+  "fractures": [
+    {
+      "rib_id": 2,
+      "predicted_class": "Not severe",
+      "confidence": 0.8008,
+      "prob_severe": 0.1992,
+      "prob_nonsevere": 0.8008
+    },
+    {
+      "rib_id": 3,
+      "predicted_class": "Not severe",
+      "confidence": 0.8338,
+      "prob_severe": 0.1662,
+      "prob_nonsevere": 0.8338
+    }
+  ]
+}

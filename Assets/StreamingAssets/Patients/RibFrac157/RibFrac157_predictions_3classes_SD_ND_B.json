@@ -1,0 +1,54 @@
+{
+  "public_id": "RibFrac157",
+  "n_fractures": 6,
+  "fractures": [
+    {
+      "rib_id": 1,
+      "predicted_class": "Not displaced",
+      "confidence": 0.6837,
+      "prob_severe": 0.1762,
+      "prob_nondisplaced": 0.6837,
+      "prob_buckle": 0.1402
+    },
+    {
+      "rib_id": 3,
+      "predicted_class": "Not displaced",
+      "confidence": 0.5222,
+      "prob_severe": 0.253,
+      "prob_nondisplaced": 0.5222,
+      "prob_buckle": 0.2248
+    },
+    {
+      "rib_id": 4,
+      "predicted_class": "Severe",
+      "confidence": 0.7033,
+      "prob_severe": 0.7033,
+      "prob_nondisplaced": 0.2724,
+      "prob_buckle": 0.0243
+    },
+    {
+      "rib_id": 5,
+      "predicted_class": "Not displaced",
+      "confidence": 0.485,
+      "prob_severe": 0.4446,
+      "prob_nondisplaced": 0.485,
+      "prob_buckle": 0.0704
+    },
+    {
+      "rib_id": 6,
+      "predicted_class": "Buckled",
+      "confidence": 0.8641,
+      "prob_severe": 0.0709,
+      "prob_nondisplaced": 0.0649,
+      "prob_buckle": 0.8641
+    },
+    {
+      "rib_id": 7,
+      "predicted_class": "Buckled",
+      "confidence": 0.6024,
+      "prob_severe": 0.2623,
+      "prob_nondisplaced": 0.1353,
+      "prob_buckle": 0.6024
+    }
+  ]
+}

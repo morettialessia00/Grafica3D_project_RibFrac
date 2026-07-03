@@ -10,7 +10,7 @@ using UnityEngine;
 ///
 /// Naming convention attesa per paziente con ID "RibFracXXX":
 ///   StreamingAssets/Patients/RibFracXXX/RibFracXXX-image.nii.gz
-///   StreamingAssets/Patients/RibFracXXX/RibFracXXX_predictions.json
+///   StreamingAssets/Patients/RibFracXXX/RibFracXXX_predictions_*.json (uno per classificatore)
 ///   StreamingAssets/Patients/RibFracXXX/RibFracXXX_ambiguous.json   (opzionale)
 ///   StreamingAssets/Patients/RibFracXXX/Meshes/                     (opzionale)
 /// </summary>
@@ -44,7 +44,6 @@ public static class PatientRegistry
             string id = Path.GetFileName(patientDir);
 
             string nifti       = Path.Combine(patientDir, $"{id}-image.nii.gz");
-            string predictions = Path.Combine(patientDir, $"{id}_predictions.json");
             string ambiguous   = Path.Combine(patientDir, $"{id}_ambiguous.json");
             string meshFolder  = Path.Combine(patientDir, "Meshes");
 
@@ -58,11 +57,11 @@ public static class PatientRegistry
 
             _cache.Add(new PatientConfig
             {
-                id              = id,
-                niftiPath       = nifti,
-                predictionsPath = File.Exists(predictions) ? predictions : "",
-                ambiguousPath   = File.Exists(ambiguous)   ? ambiguous   : "",
-                meshFolder      = Directory.Exists(meshFolder) ? meshFolder : patientDir
+                id            = id,
+                niftiPath     = nifti,
+                patientDir    = patientDir,
+                ambiguousPath = File.Exists(ambiguous) ? ambiguous : "",
+                meshFolder    = Directory.Exists(meshFolder) ? meshFolder : patientDir
             });
 
             Debug.Log($"[PatientRegistry] Trovato paziente: {id}");

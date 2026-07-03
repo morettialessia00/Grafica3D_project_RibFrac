@@ -38,19 +38,20 @@ public class FractureSelector : MonoBehaviour
         if (mouse == null) return;
 
         bool overUI = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
-        bool inMode2 = _ctLoader != null && _ctLoader.CurrentColorMode == 2;
+        bool inClassifierMode = _ctLoader != null &&
+                                FractureClasses.IsClassifierMode(_ctLoader.CurrentColorMode);
 
         // ── Hover highlight (ogni frame) ──────────────────────────────────────
         // Aggiorna quale frattura è sotto il cursore per il boost colore in CTLoader.
-        if (!overUI && inMode2)
+        if (!overUI && inClassifierMode)
         {
             Vector2 screenPos = mouse.position.ReadValue();
             Ray hoverRay = Camera.main.ScreenPointToRay(new Vector3(screenPos.x, screenPos.y, 0f));
 
             if (Physics.Raycast(hoverRay, out RaycastHit hoverHit))
             {
-                int hoveredId = ParseRibId(hoverHit.collider.gameObject.name);
-                _ctLoader.SetHoveredObject(hoveredId >= 0 ? hoverHit.collider.gameObject : null);
+                var info = hoverHit.collider.GetComponent<FractureMeshInfo>();
+                _ctLoader.SetHoveredObject(info != null ? hoverHit.collider.gameObject : null);
             }
             else
             {
@@ -66,8 +67,8 @@ public class FractureSelector : MonoBehaviour
         if (!mouse.leftButton.wasPressedThisFrame) return;
         if (overUI) return;
 
-        // Il pannello dettaglio è disponibile solo in modalità "per tipo" (mode 2)
-        if (!inMode2)
+        // Il pannello dettaglio è disponibile solo in modalità classificatore.
+        if (!inClassifierMode)
         {
             _detailPanel?.Hide();
             return;
@@ -78,14 +79,17 @@ public class FractureSelector : MonoBehaviour
 
         if (Physics.Raycast(ray, out RaycastHit hit))
         {
-            int ribId = ParseRibId(hit.collider.gameObject.name);
+            var info = hit.collider.GetComponent<FractureMeshInfo>();
 
-            if (ribId >= 0)
+            if (info != null)
             {
-                // Mostra pannello dettaglio
+                int ribId = info.ribId;
+
+                // Mostra pannello dettaglio. Le mesh ambigue non hanno predizione.
                 FractureEntry entry = null;
-                _ctLoader?.FractureData.TryGetValue(ribId, out entry);
-                _detailPanel?.Show(ribId, entry);
+                if (!info.isAmbiguous)
+                    _ctLoader?.FractureData.TryGetValue(ribId, out entry);
+                _detailPanel?.Show(ribId, entry, _ctLoader != null ? _ctLoader.CurrentClassifierIndex : -1);
 
                 // Centra e zooma la camera sulla frattura colpita
                 Renderer rend = hit.collider.GetComponentInChildren<Renderer>()
@@ -103,20 +107,5 @@ public class FractureSelector : MonoBehaviour
 
         // Click su area vuota o su un oggetto che non è una frattura
         _detailPanel?.Hide();
-    }
-
-    // ── Helper: parsa rib_id dal nome del GameObject ──────────────────────────
-    // Formato atteso: "rib_03_Displaced", "rib_07_Unclassified", ecc.
-    // Restituisce -1 se il nome non corrisponde al pattern.
-    static int ParseRibId(string goName)
-    {
-        // Tutti i GameObject-frattura iniziano con "rib_" (assegnato in CTLoader)
-        if (!goName.StartsWith("rib_")) return -1;
-
-        string[] parts = goName.Split('_');
-        // parts[0] = "rib", parts[1] = "03", parts[2+] = classe
-        if (parts.Length < 3) return -1;
-
-        return int.TryParse(parts[1], out int id) ? id : -1;
     }
 }

@@ -37,51 +37,46 @@ public class FractureDetailPanel : MonoBehaviour
     // ── API pubblica ──────────────────────────────────────────────────────────
     /// <summary>
     /// Mostra il pannello con i dettagli della frattura cliccata.
-    /// entry può essere null per le fratture non classificate (segmental / ambigue).
+    /// entry può essere null per le fratture non classificate (ambigue o non
+    /// classificate dal classificatore selezionato).
+    /// classifierIndex indica il classificatore attivo (0..3), -1 se nessuno.
     /// </summary>
-    public void Show(int ribId, FractureEntry entry)
+    public void Show(int ribId, FractureEntry entry, int classifierIndex)
     {
         if (_panel == null) return;
         _panel.SetActive(true);
 
         _titleText.text = $"Fracture {ribId}";
 
-        if (entry == null)
+        if (entry == null || classifierIndex < 0)
         {
             // Frattura non classificata: nessun dato di confidenza disponibile
-            _classText.text = "<color=#808080>Unclassified</color>";
+            _classText.text = $"<color={FractureClasses.UnclassifiedHex}>Unclassified</color>";
             _confidenceText.gameObject.SetActive(false);
             _probsContainer.SetActive(false);
             return;
         }
 
         // Colore coerente con FractureLegend
-        string hex = entry.predicted_class switch
-        {
-            "Severe"        => "#E87722",
-            "Not displaced" => "#4A90D9",
-            "Buckled"       => "#9B59B6",
-            _               => "#808080"
-        };
-
+        string hex = FractureClasses.Hex(entry.predicted_class);
         _classText.text = $"<color={hex}><b>{entry.predicted_class}</b></color>";
 
         _confidenceText.gameObject.SetActive(true);
         _confidenceText.text = $"Confidence: <b>{entry.confidence:P0}</b>";
 
-        // Mostra le 3 probabilità grezze solo se presenti nel JSON
-        bool hasProbs = entry.prob_severe > 0f ||
-                        entry.prob_nondisplaced > 0f ||
-                        entry.prob_buckle > 0f;
-
-        _probsContainer.SetActive(hasProbs);
-        if (hasProbs)
+        // Elenca le probabilità per le classi del classificatore attivo.
+        string[] classes = FractureClasses.Classifiers[classifierIndex].classes;
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < classes.Length; i++)
         {
-            _probsText.text =
-                $"<color=#E87722>Severe</color>            {entry.prob_severe:P0}\n" +
-                $"<color=#4A90D9>Not displaced</color>  {entry.prob_nondisplaced:P0}\n" +
-                $"<color=#9B59B6>Buckled</color>           {entry.prob_buckle:P0}";
+            string cls = classes[i];
+            float p = FractureClasses.ProbForClass(entry, cls);
+            sb.Append($"<color={FractureClasses.Hex(cls)}>{cls}</color>  {p:P0}");
+            if (i < classes.Length - 1) sb.Append('\n');
         }
+
+        _probsContainer.SetActive(true);
+        _probsText.text = sb.ToString();
     }
 
     public void Hide()

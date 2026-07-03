@@ -7,7 +7,7 @@ public class PatientConfig
 {
     public string id;               // es. "RibFrac108"
     public string niftiPath;        // path assoluto al .nii.gz
-    public string predictionsPath;  // path assoluto al _predictions.json
+    public string patientDir;       // cartella del paziente (per i JSON dei classificatori)
     public string ambiguousPath;    // path assoluto al _ambiguous.json
     public string meshFolder;       // path assoluto alla cartella Meshes/
 }

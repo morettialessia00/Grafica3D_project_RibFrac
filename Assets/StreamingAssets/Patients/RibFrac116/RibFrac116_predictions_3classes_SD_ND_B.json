@@ -1,0 +1,22 @@
+{
+  "public_id": "RibFrac116",
+  "n_fractures": 2,
+  "fractures": [
+    {
+      "rib_id": 2,
+      "predicted_class": "Buckled",
+      "confidence": 0.84,
+      "prob_severe": 0.0637,
+      "prob_nondisplaced": 0.0963,
+      "prob_buckle": 0.84
+    },
+    {
+      "rib_id": 3,
+      "predicted_class": "Buckled",
+      "confidence": 0.848,
+      "prob_severe": 0.0834,
+      "prob_nondisplaced": 0.0685,
+      "prob_buckle": 0.848
+    }
+  ]
+}
