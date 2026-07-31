@@ -64,7 +64,7 @@ public class FractureLegend : MonoBehaviour
         rt.anchorMax        = new Vector2(1f, 0f);
         rt.pivot            = new Vector2(1f, 0f);
         rt.anchoredPosition = new Vector2(-14f, 14f);
-        rt.sizeDelta        = new Vector2(334f, 250f);
+        rt.sizeDelta        = new Vector2(334f, 292f);
 
         Image bg = _panel.AddComponent<Image>();
         bg.color = new Color(0.149f, 0.208f, 0.282f, 0.92f); // pannello #263548
@@ -88,7 +88,7 @@ public class FractureLegend : MonoBehaviour
         // Blocco rich-text unico: il testo viene rigenerato in Refresh in base al modo.
         // Uso ■ (U+25A0) colorato inline — perfettamente allineato col testo.
         GameObject block = AddRichBlock(_panel.transform, "",
-            fontSize: 28f, preferredWidth: 300f, preferredHeight: 200f);
+            fontSize: 28f, preferredWidth: 300f, preferredHeight: 242f);
         _content = block.GetComponent<TextMeshProUGUI>();
     }
 

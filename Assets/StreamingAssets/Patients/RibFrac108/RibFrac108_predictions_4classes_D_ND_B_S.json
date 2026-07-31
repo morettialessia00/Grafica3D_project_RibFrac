@@ -5,74 +5,74 @@
     {
       "rib_id": 1,
       "predicted_class": "Not displaced",
-      "confidence": 0.5498,
-      "prob_displaced": 0.172,
-      "prob_nondisplaced": 0.5498,
-      "prob_buckle": 0.1141,
-      "prob_segmental": 0.1141
+      "confidence": 0.4835,
+      "prob_displaced": 0.1598,
+      "prob_nondisplaced": 0.4835,
+      "prob_buckle": 0.1783,
+      "prob_segmental": 0.1784
     },
     {
       "rib_id": 2,
       "predicted_class": "Segmental",
-      "confidence": 0.8198,
-      "prob_displaced": 0.0215,
-      "prob_nondisplaced": 0.0198,
-      "prob_buckle": 0.1389,
-      "prob_segmental": 0.1389
+      "confidence": 0.492,
+      "prob_displaced": 0.178,
+      "prob_nondisplaced": 0.2561,
+      "prob_buckle": 0.0739,
+      "prob_segmental": 0.492
     },
     {
       "rib_id": 3,
-      "predicted_class": "Buckled",
-      "confidence": 0.3407,
-      "prob_displaced": 0.2361,
-      "prob_nondisplaced": 0.2968,
-      "prob_buckle": 0.3407,
-      "prob_segmental": 0.3407
+      "predicted_class": "Not displaced",
+      "confidence": 0.3665,
+      "prob_displaced": 0.2158,
+      "prob_nondisplaced": 0.3665,
+      "prob_buckle": 0.2826,
+      "prob_segmental": 0.135
     },
     {
       "rib_id": 5,
       "predicted_class": "Not displaced",
-      "confidence": 0.3785,
-      "prob_displaced": 0.1578,
-      "prob_nondisplaced": 0.3785,
-      "prob_buckle": 0.2929,
-      "prob_segmental": 0.2929
+      "confidence": 0.5182,
+      "prob_displaced": 0.2209,
+      "prob_nondisplaced": 0.5182,
+      "prob_buckle": 0.1414,
+      "prob_segmental": 0.1195
     },
     {
       "rib_id": 7,
       "predicted_class": "Segmental",
-      "confidence": 0.4516,
-      "prob_displaced": 0.0982,
-      "prob_nondisplaced": 0.3402,
-      "prob_buckle": 0.1101,
-      "prob_segmental": 0.1101
+      "confidence": 0.4652,
+      "prob_displaced": 0.1098,
+      "prob_nondisplaced": 0.3415,
+      "prob_buckle": 0.0836,
+      "prob_segmental": 0.4652
     },
     {
       "rib_id": 11,
       "predicted_class": "Displaced",
-      "confidence": 0.5794,
-      "prob_displaced": 0.5794,
-      "prob_nondisplaced": 0.2248,
-      "prob_buckle": 0.0303,
-      "prob_segmental": 0.0303
+      "confidence": 0.5724,
+      "prob_displaced": 0.5724,
+      "prob_nondisplaced": 0.2311,
+      "prob_buckle": 0.0368,
+      "prob_segmental": 0.1597
     },
     {
       "rib_id": 12,
       "predicted_class": "Not displaced",
-      "confidence": 0.5742,
-      "prob_displaced": 0.1186,
-      "prob_nondisplaced": 0.5742,
-      "prob_buckle": 0.112,
-      "prob_segmental": 0.112
+      "confidence": 0.5268,
+      "prob_displaced": 0.1076,
+      "prob_nondisplaced": 0.5268,
+      "prob_buckle": 0.1457,
+      "prob_segmental": 0.2199
     },
     {
       "rib_id": 13,
       "predicted_class": "Not displaced",
-      "confidence": 0.473,
-      "prob_displaced": 0.23,
-      "prob_nondisplaced": 0.473,
-      "prob_buckle": 0.1086,
-      "prob_segmental": 0.1086
+      "confidence": 0.4477,
+      "prob_displaced": 0.1633,
+      "prob_nondisplaced": 0.4477,
+      "prob_buckle": 0.1294,
+      "prob_segmental": 0.2596
     }
   ]
 }

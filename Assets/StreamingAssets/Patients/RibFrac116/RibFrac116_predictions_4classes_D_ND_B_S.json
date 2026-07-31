@@ -5,20 +5,20 @@
     {
       "rib_id": 2,
       "predicted_class": "Buckled",
-      "confidence": 0.9407,
-      "prob_displaced": 0.0119,
-      "prob_nondisplaced": 0.0073,
-      "prob_buckle": 0.9407,
-      "prob_segmental": 0.9407
+      "confidence": 0.7804,
+      "prob_displaced": 0.0946,
+      "prob_nondisplaced": 0.0811,
+      "prob_buckle": 0.7804,
+      "prob_segmental": 0.0438
     },
     {
       "rib_id": 3,
       "predicted_class": "Buckled",
-      "confidence": 0.9045,
-      "prob_displaced": 0.0117,
-      "prob_nondisplaced": 0.0096,
-      "prob_buckle": 0.9045,
-      "prob_segmental": 0.9045
+      "confidence": 0.7969,
+      "prob_displaced": 0.0617,
+      "prob_nondisplaced": 0.0822,
+      "prob_buckle": 0.7969,
+      "prob_segmental": 0.0593
     }
   ]
 }
